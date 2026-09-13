@@ -1,0 +1,22 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# 用户数据：本地知识库不进版本库（Local-first，知识属于用户）
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# 编辑器
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
+.gstack/

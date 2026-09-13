@@ -1,0 +1,13 @@
+# 本文件只解决一个问题：本机全局 `~/.cargo/config` 把 crates-io 指向了
+# `git://mirrors.ustc.edu.cn/crates.io-index`，而 `git://` 协议在当前网络下
+# 无法读取 refs（Net/Eof 错误），导致任何依赖都无法解析。
+#
+# 这里把镜像换成同一站点的 **sparse** 索引（HTTPS + 增量拉取，也是 cargo 官方
+# 现在推荐的索引格式）。
+#
+# 如果你已经修正了全局配置，可以直接删除本文件，不影响项目。
+[source.crates-io]
+replace-with = "ustc-sparse"
+
+[source.ustc-sparse]
+registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"

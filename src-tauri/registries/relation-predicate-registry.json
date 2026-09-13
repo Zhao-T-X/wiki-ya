@@ -1,0 +1,24 @@
+{
+  "version":"1.0",
+  "relation_predicates":[
+    {"predicate":"subtype_of","inverse_label":"has_subtype","symmetric":false,"transitive":true,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"part_of","inverse_label":"contains","symmetric":false,"transitive":true,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"uses","inverse_label":"used_by","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"depends_on","inverse_label":"dependency_of","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"develops","inverse_label":"developed_by","symmetric":false,"transitive":false,"source_types":["Person","Organization"],"target_types":["Product","Software","Technology","Method","Dataset","Model","Resource"],"requires_explicit_evidence":true},
+    {"predicate":"creates","inverse_label":"created_by","symmetric":false,"transitive":false,"source_types":["Person","Organization"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"maintains","inverse_label":"maintained_by","symmetric":false,"transitive":false,"source_types":["Person","Organization"],"target_types":["Product","Software","Dataset","Model","Technology","Resource","Protocol","Standard"],"requires_explicit_evidence":true},
+    {"predicate":"owns","inverse_label":"owned_by","symmetric":false,"transitive":false,"source_types":["Person","Organization"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"implements","inverse_label":"implemented_by","symmetric":false,"transitive":false,"source_types":["Product","Software","Technology","Protocol"],"target_types":["Standard","Protocol"],"requires_explicit_evidence":true},
+    {"predicate":"based_on","inverse_label":"basis_for","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"derived_from","inverse_label":"source_of","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"extends","inverse_label":"extended_by","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"trained_on","inverse_label":"training_data_for","symmetric":false,"transitive":false,"source_types":["Model"],"target_types":["Dataset"],"requires_explicit_evidence":true},
+    {"predicate":"evaluated_on","inverse_label":"evaluation_target_of","symmetric":false,"transitive":false,"source_types":["Model","Method","Software","Product","Technology"],"target_types":["Dataset","Resource"],"requires_explicit_evidence":true},
+    {"predicate":"studies","inverse_label":"studied_by","symmetric":false,"transitive":false,"source_types":["Person","Organization"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"evaluates","inverse_label":"evaluated_by","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"compares_with","inverse_label":"compares_with","symmetric":true,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"applied_to","inverse_label":"application_of","symmetric":false,"transitive":false,"source_types":["Method","Technology","Software","Product","Model"],"target_types":["*"],"requires_explicit_evidence":true},
+    {"predicate":"designed_for","inverse_label":"design_target_of","symmetric":false,"transitive":false,"source_types":["*"],"target_types":["*"],"requires_explicit_evidence":true}
+  ]
+}

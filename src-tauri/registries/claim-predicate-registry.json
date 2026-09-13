@@ -1,0 +1,11 @@
+{
+  "version":"1.0",
+  "claim_predicates":[
+    "is","defined_as","classified_as","contains","includes","consists_of",
+    "uses","retrieves","accesses","provides","receives","generates","produces","creates","extracts","transforms",
+    "supports","enables","allows","improves","reduces","increases","decreases","prevents","causes","leads_to",
+    "depends_on","requires","implements","based_on","derived_from","extends",
+    "trained_on","evaluated_on","tested_on","studies","investigates","evaluates","analyzes",
+    "compares_with","better_than","worse_than","designed_for","used_for","applied_to","addresses"
+  ]
+}

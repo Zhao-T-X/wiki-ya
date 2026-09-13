@@ -1,0 +1,9 @@
+{
+  "version":"1.0",
+  "outcomes":["DIRECT_RELATION","CONDITIONAL_RELATION","CLAIM_ONLY","REJECTED"],
+  "direct_relation_requirements":["subject_resolves_to_entity","object_resolves_to_entity","predicate_in_relation_registry","explicit_canonical_semantics","positive_polarity","asserted_modality","no_material_unresolved_condition","valid_direct_evidence","long_term_graph_value","source_target_types_allowed"],
+  "claim_only_predicates":["retrieves","provides","receives","generates","produces","extracts","supports","enables","causes","leads_to","improves","reduces","increases","decreases","prevents","addresses","better_than","worse_than","similar_to","different_from"],
+  "never_semantically_upgrade":[["uses","depends_on"],["designed_for","improves"],["based_on","derived_from"],["compares_with","better_than"]],
+  "context_sensitive_predicates":["uses","develops","creates","maintains","owns","studies","evaluates","applied_to","designed_for","compares_with"],
+  "always_claim_only_predicates":["better_than","worse_than","similar_to","different_from","improves","addresses","supports","causes","leads_to","retrieves","provides","receives","generates","produces","extracts","reduces","increases","decreases","prevents"]
+}

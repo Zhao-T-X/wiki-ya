@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 语义色板（对应 tailwind.config.js 中的 canvas/surface/elevated/line/ink/muted/accent/ok/warn/danger）。
+ * 值统一为 "R G B" 三段空格分隔，供 `rgb(var(--wy-x) / <alpha-value>)` 使用。
+ * index.html 上写死了 class="dark"，因此默认外观即为暗色。
+ */
+
+:root {
+  color-scheme: light;
+
+  --wy-canvas: 249 250 251;
+  --wy-surface: 255 255 255;
+  --wy-elevated: 255 255 255;
+  --wy-line: 224 227 233;
+  --wy-ink: 23 25 30;
+  --wy-muted: 104 111 123;
+  --wy-accent: 57 88 214;
+  --wy-ok: 30 145 88;
+  --wy-warn: 170 116 6;
+  --wy-danger: 193 56 56;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* 精密工具感的中性暗色：低饱和、低亮度、层级靠明度而非色相区分。 */
+  --wy-canvas: 8 9 12;
+  --wy-surface: 14 16 20;
+  --wy-elevated: 21 24 30;
+  --wy-line: 37 41 49;
+  --wy-ink: 231 234 239;
+  --wy-muted: 137 144 156;
+  --wy-accent: 111 145 255;
+  --wy-ok: 74 199 132;
+  --wy-warn: 224 170 74;
+  --wy-danger: 230 96 96;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  @apply bg-canvas text-ink antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  text-rendering: optimizeLegibility;
+}
+
+/* 精细滚动条：与暗色画布融合，避免默认滚动条割裂界面。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--wy-line)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--wy-line));
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--wy-muted) / 0.6);
+}
+
+::selection {
+  background-color: rgb(var(--wy-accent) / 0.28);
+}
+
+/* 键盘可达性：只在键盘聚焦时显示环，不干扰鼠标操作。 */
+:focus-visible {
+  outline: 2px solid rgb(var(--wy-accent) / 0.7);
+  outline-offset: 2px;
+}
+
+@layer components {
+  /* 页面标题与说明的统一排版。 */
+  .wy-page-title {
+    @apply text-xl font-semibold tracking-tight text-ink;
+  }
+
+  .wy-page-subtitle {
+    @apply mt-1 text-sm text-muted;
+  }
+
+  /* 极克制的分隔线。 */
+  .wy-divider {
+    @apply h-px w-full bg-line;
+  }
+}

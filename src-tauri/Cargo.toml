@@ -1,0 +1,56 @@
+[package]
+name = "wiki-ya"
+version = "0.1.0"
+description = "Local-first AI personal knowledge system"
+authors = ["wiki-ya"]
+edition = "2021"
+# 本 crate 有两个二进制（主程序 `wiki-ya` 与独立 MCP server `mcp`），
+# 显式指定默认目标，避免 `cargo run` 无法抉择。
+default-run = "wiki-ya"
+# MSRV 与本机工具链保持一致：resolver = "3" 会据此挑选兼容的依赖版本，
+# 否则 Tauri 的传递依赖（time / icu / serde_with 等）会要求 rustc 1.88+。
+rust-version = "1.86"
+
+[workspace]
+# resolver = "3" 启用 MSRV 感知的依赖解析：选版本时优先满足 rust-version，
+# 而不是盲目取最新的 semver 兼容版本。
+resolver = "3"
+
+[lib]
+# Tauri 需要 cdylib/staticlib 供移动端与打包使用，rlib 供集成测试使用。
+name = "wiki_ya_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# bundled: 自带 SQLite 编译，并启用 FTS5（不依赖系统 sqlite3）
+rusqlite = { version = "0.32", features = ["bundled"] }
+thiserror = "1"
+uuid = { version = "1", features = ["v4"] }
+# 保留：迁移阶段的 legacy 时间解析与运行记录时间戳
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+# AI 抽取 / Ask 的 HTTP 客户端（OpenAI 兼容接口）。用 blocking + 系统 TLS，
+# 避免引入额外 TLS 栈；Tauri command 在线程池上跑，blocking 足够。
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+[features]
+# 保留：后续 custom-protocol 打包模式可能用到
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.dev]
+# 依赖只编译一次，用 -O 换取更快的运行期；自身代码保持 opt-level 0 便于调试。
+opt-level = 0
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

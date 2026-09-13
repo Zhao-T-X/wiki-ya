@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "entity_types": [
+    {"type":"Person","description":"An independently identifiable natural person."},
+    {"type":"Organization","description":"An independently identifiable stable organization or institution."},
+    {"type":"Product","description":"An independently identifiable product offered or provided to users or a market."},
+    {"type":"Software","description":"An executable, deployable or usable software system, program, library, framework or tool."},
+    {"type":"Technology","description":"A technically meaningful technology, architecture, technical system, capability or technology family."},
+    {"type":"Method","description":"A method, algorithm, procedure, workflow or way of achieving a goal."},
+    {"type":"Concept","description":"An abstract object that can be independently defined, discussed or used as a durable knowledge topic."},
+    {"type":"Theory","description":"A relatively coherent explanatory theory or theoretical framework."},
+    {"type":"Dataset","description":"An independently identifiable organized collection of data."},
+    {"type":"Model","description":"An independently identifiable model used for training, inference, evaluation or deployment."},
+    {"type":"Standard","description":"A formally standardized or normative specification."},
+    {"type":"Protocol","description":"A defined protocol for communication, interaction, coordination or interoperability."},
+    {"type":"Resource","description":"A separately identifiable resource not reasonably classified as another registered Entity Type."},
+    {"type":"Location","description":"An independently identifiable geographic, spatial or site/location entity."}
+  ]
+}
