@@ -4,8 +4,10 @@
 //! 因此事件名是**对外契约**，一旦发布不得改名，只能新增。
 
 pub mod app_event;
+pub mod extraction_event;
 
 pub use app_event::AppEvent;
+pub use extraction_event::{ExtractionEvent, ExtractionSink};
 
 use std::sync::Arc;
 

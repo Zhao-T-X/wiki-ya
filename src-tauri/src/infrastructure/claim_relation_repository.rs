@@ -11,6 +11,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::domain::common::ids::{ClaimId, ClaimRelationId};
 use crate::domain::evolution::classifier::{ClaimRelationStatus, ClaimRelationType};
+use crate::domain::evolution::decision::EvolutionTransition;
+use crate::domain::knowledge::claim::ClaimStatus;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::db::{opt_f32_col, parse_col};
 
@@ -31,26 +33,8 @@ pub struct ClaimRelationRow {
     pub created_at: String,
 }
 
-/// 审核决策。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelationDecision {
-    /// 接受：产生事实效果（仅 `supersedes` 会改变当前知识）。
-    Accept,
-    /// 拒绝：关系作废，**不改动任何 Claim**。
-    Reject,
-    /// 撤销：回到待审状态；若此前确认过取代，则恢复旧 Claim 的状态。
-    Reset,
-}
-
-impl RelationDecision {
-    pub fn status(&self) -> ClaimRelationStatus {
-        match self {
-            RelationDecision::Accept => ClaimRelationStatus::Accepted,
-            RelationDecision::Reject => ClaimRelationStatus::Rejected,
-            RelationDecision::Reset => ClaimRelationStatus::Candidate,
-        }
-    }
-}
+// 审核动作（Accept / Reject / Reset）与其状态迁移规则已上移到领域层：
+// 见 `domain::evolution::decision::{ReviewAction, EvolutionTransition}`（K-002）。
 
 /// 两端 Claim 的可读陈述由 SQL 直接拼出（与 `claim_repository::display_text` 同口径）。
 const RELATION_SELECT: &str = "
@@ -183,75 +167,143 @@ pub fn list_for_claim(conn: &Connection, claim_id: &ClaimId) -> AppResult<Vec<Cl
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-/// 提交一次审核决策。
+/// 读取某条 Claim 的当前状态（轻量查询，供决策编排使用）。
+pub fn claim_status(conn: &Connection, claim_id: &ClaimId) -> AppResult<Option<ClaimStatus>> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT status FROM claims WHERE id = ?1",
+            params![claim_id.as_str()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    raw.map(|value| value.parse::<ClaimStatus>()).transpose()
+}
+
+/// 应用一次演化决策（K-002）：**纯持久化**。
 ///
-/// 这是整个系统里唯一会写 `claims.status` 的地方（INV-08）。
-pub fn decide(
+/// 本函数不含任何「什么关系该把 Claim 改成什么状态」的业务判断——那由
+/// [`EvolutionTransition::plan`] 在领域层决定。Repository 只负责把结果写下去。
+/// 它仍是整个系统里唯一会写 `claims.status` 的地方（INV-08）。
+pub fn apply_decision(
     conn: &Connection,
     relation_id: &ClaimRelationId,
-    decision: RelationDecision,
-    relationship_override: Option<ClaimRelationType>,
+    relationship: ClaimRelationType,
+    transition: &EvolutionTransition,
 ) -> AppResult<ClaimRelationRow> {
     let current = get(conn, relation_id)?
         .ok_or_else(|| AppError::NotFound(format!("演化关系 {relation_id} 不存在")))?;
 
-    // 允许审核时修正关系类型（用户可能判断"这不是取代而是补充"）。
-    let relationship = relationship_override.unwrap_or(current.relationship);
-    let new_status = decision.status();
+    // 受影响方在本次决策前的状态：既供事件审计，也在下面写回锚点。
+    let target_status_before = claim_status(conn, &current.target_claim_id)?;
 
     conn.execute(
         "UPDATE claim_relations SET relationship = ?1 WHERE id = ?2",
         params![relationship.as_str(), relation_id.as_str()],
     )?;
 
-    // 唯一会产生"取代"副作用的条件：最终关系是 supersedes 且被接受。
-    // 用单一真值驱动，避免"改判成其它关系 + accepted"这种组合既不置位也不回滚（INV-08/09）。
-    let is_accepted_supersedes = relationship == ClaimRelationType::Supersedes
-        && new_status == ClaimRelationStatus::Accepted;
+    // 记录回滚锚点：是否记录、记录什么，完全由领域层决定（避免重复确认覆盖锚点）。
+    if let Some(anchor) = transition.record_previous_status {
+        conn.execute(
+            "UPDATE claim_relations SET target_previous_status = ?1 WHERE id = ?2",
+            params![anchor.as_str(), relation_id.as_str()],
+        )?;
+    }
 
-    if is_accepted_supersedes {
-        // 记录"被取代前的状态"，只记录一次：
-        // 如果目标已经是 superseded（重复确认），再记录会把 superseded 存成
-        // previous_status，导致回滚时恢复成一个错误的状态。
-        let target_status: Option<String> = conn
-            .query_row(
-                "SELECT status FROM claims WHERE id = ?1",
-                params![current.target_claim_id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-
-        if let Some(status) = target_status {
-            if status != "superseded" {
-                conn.execute(
-                    "UPDATE claim_relations SET target_previous_status = ?1 WHERE id = ?2",
-                    params![status, relation_id.as_str()],
-                )?;
-            }
+    // 目标 Claim 的状态迁移。
+    // - 置为 superseded：无守卫（幂等）。
+    // - 其余（精确恢复）：带 `status = 'superseded'` 守卫，只作用于确实被取代过的行（INV-09）。
+    if let Some(new_status) = transition.target_status {
+        let affected = if new_status == ClaimStatus::Superseded {
             conn.execute(
                 "UPDATE claims SET status = 'superseded' WHERE id = ?1",
                 params![current.target_claim_id.as_str()],
-            )?;
-        }
-    } else {
-        // 不再是"已确认的取代"：无论是被拒绝 / 撤销，还是**被改判成其它关系**，
-        // 都必须按记录的原状态精确恢复（INV-09），否则 Claim 会永久卡在 superseded。
-        if let Some(previous) = current.target_previous_status.as_deref() {
+            )?
+        } else {
             conn.execute(
-                "UPDATE claims SET status = ?1
-                 WHERE id = ?2 AND status = 'superseded'",
-                params![previous, current.target_claim_id.as_str()],
-            )?;
+                "UPDATE claims SET status = ?1 WHERE id = ?2 AND status = 'superseded'",
+                params![new_status.as_str(), current.target_claim_id.as_str()],
+            )?
+        };
+
+        // 契约 §52：不变量失败必须整体回滚，而不是把 relation 先保存下来。
+        // 取代是唯一"必须真正改到行"的迁移；一行都没改到说明数据不一致。
+        if new_status == ClaimStatus::Superseded && affected == 0 {
+            return Err(AppError::Domain(format!(
+                "违反知识契约：目标 Claim {} 不存在，无法执行取代（本次决策将整体回滚）",
+                current.target_claim_id
+            )));
         }
     }
 
     conn.execute(
         "UPDATE claim_relations SET status = ?1, reviewed_at = datetime('now') WHERE id = ?2",
-        params![new_status.as_str(), relation_id.as_str()],
+        params![transition.relation_status.as_str(), relation_id.as_str()],
+    )?;
+
+    // CORE-005：把本次决策追加为**不可变**事件。Revert（reset）在这里同样产生
+    // 新事件，而不是抹掉历史，因此 Timeline 能完整回放"知识为什么变化"。
+    let target_status_after = claim_status(conn, &current.target_claim_id)?;
+    conn.execute(
+        "INSERT INTO claim_relation_events(
+            id, relation_id, relationship, status,
+            target_claim_id, target_status_before, target_status_after, note
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            relation_id.as_str(),
+            relationship.as_str(),
+            transition.relation_status.as_str(),
+            current.target_claim_id.as_str(),
+            target_status_before.map(|status| status.as_str().to_string()),
+            target_status_after.map(|status| status.as_str().to_string()),
+            current.reason,
+        ],
     )?;
 
     get(conn, relation_id)?
         .ok_or_else(|| AppError::Internal("关系刚更新却读不到".into()))
+}
+
+/// 一条演化事件（CORE-005）。只追加、不修改，用于审计与 Timeline。
+#[derive(Debug, Clone)]
+pub struct ClaimRelationEvent {
+    pub id: String,
+    pub relation_id: ClaimRelationId,
+    pub relationship: ClaimRelationType,
+    pub status: ClaimRelationStatus,
+    pub target_claim_id: Option<ClaimId>,
+    pub target_status_before: Option<String>,
+    pub target_status_after: Option<String>,
+    pub note: Option<String>,
+    pub created_at: String,
+}
+
+/// 某条关系的全部演化事件（时间正序，含 Revert）。
+pub fn list_events(
+    conn: &Connection,
+    relation_id: &ClaimRelationId,
+) -> AppResult<Vec<ClaimRelationEvent>> {
+    let mut statement = conn.prepare(
+        "SELECT id, relation_id, relationship, status, target_claim_id,
+                target_status_before, target_status_after, note, created_at
+         FROM claim_relation_events
+         WHERE relation_id = ?1
+         ORDER BY created_at ASC, rowid ASC",
+    )?;
+    let rows = statement.query_map(params![relation_id.as_str()], |row| {
+        Ok(ClaimRelationEvent {
+            id: row.get(0)?,
+            relation_id: parse_col::<ClaimRelationId>(row, 1)?,
+            relationship: parse_col::<ClaimRelationType>(row, 2)?,
+            status: parse_col::<ClaimRelationStatus>(row, 3)?,
+            target_claim_id: row.get::<_, Option<String>>(4)?.map(ClaimId::from_raw),
+            target_status_before: row.get(5)?,
+            target_status_after: row.get(6)?,
+            note: row.get(7)?,
+            created_at: row.get(8)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 /// 潜在重复数（Knowledge Health）。
@@ -289,9 +341,34 @@ mod tests {
     use crate::domain::knowledge::claim::{
         Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity,
     };
+    use crate::domain::evolution::decision::{EvolutionTransition, ReviewAction};
     use crate::domain::ontology::predicate::ClaimPredicate;
     use crate::infrastructure::db::tests::memory_db;
     use crate::infrastructure::{claim_repository, entity_repository};
+
+    /// 测试辅助：与应用层同构地执行一次决策（领域规划 → 持久化）。
+    ///
+    /// 生产路径由 `application::evolution_service::decide_relation` 编排；
+    /// Repository 本身只暴露纯持久化的 `apply_decision`。
+    fn decide(
+        conn: &Connection,
+        relation_id: &ClaimRelationId,
+        action: ReviewAction,
+        relationship_override: Option<ClaimRelationType>,
+    ) -> AppResult<ClaimRelationRow> {
+        let current = get(conn, relation_id)?
+            .ok_or_else(|| AppError::NotFound(format!("演化关系 {relation_id} 不存在")))?;
+        let relationship = relationship_override.unwrap_or(current.relationship);
+        // 注意：测试模块内也有同名函数 `claim_status`（返回 String），这里显式用仓储版。
+        let target_status = super::claim_status(conn, &current.target_claim_id)?;
+        let anchor = current
+            .target_previous_status
+            .as_deref()
+            .map(str::parse::<ClaimStatus>)
+            .transpose()?;
+        let transition = EvolutionTransition::plan(relationship, action, target_status, anchor);
+        apply_decision(conn, relation_id, relationship, &transition)
+    }
 
     /// 造两条"同一主语同一谓语、宾语不同"的 Claim。
     fn two_claims(conn: &Connection) -> (ClaimId, ClaimId) {
@@ -316,6 +393,7 @@ mod tests {
                 status: ClaimStatus::Verified,
                 valid_from: None,
                 valid_until: None,
+                observed_at: None,
                 recorded_at: String::new(),
                 created_at: String::new(),
             };
@@ -405,7 +483,7 @@ mod tests {
         let updated = decide(
             &conn,
             &id,
-            RelationDecision::Accept,
+            ReviewAction::Accept,
             Some(ClaimRelationType::Supersedes),
         )
         .unwrap();
@@ -423,11 +501,11 @@ mod tests {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
 
-        decide(&conn, &id, RelationDecision::Accept, Some(ClaimRelationType::Supersedes))
+        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes))
             .unwrap();
         assert_eq!(claim_status(&conn, &target), "superseded");
 
-        decide(&conn, &id, RelationDecision::Reset, None).unwrap();
+        decide(&conn, &id, ReviewAction::Reset, None).unwrap();
         assert_eq!(claim_status(&conn, &target), "verified", "必须精确恢复（INV-09）");
     }
 
@@ -436,14 +514,14 @@ mod tests {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
 
-        decide(&conn, &id, RelationDecision::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
+        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
         assert_eq!(claim_status(&conn, &target), "superseded");
 
         // 改判为 supplements 且仍 accepted：必须回滚被取代的 Claim（INV-09）。
         let updated = decide(
             &conn,
             &id,
-            RelationDecision::Accept,
+            ReviewAction::Accept,
             Some(ClaimRelationType::Supplements),
         )
         .unwrap();
@@ -460,15 +538,15 @@ mod tests {
     fn repeating_accept_does_not_corrupt_the_rollback_anchor() {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
-        decide(&conn, &id, RelationDecision::Accept, Some(ClaimRelationType::Supersedes))
+        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes))
             .unwrap();
         // 再次确认：不能把 'superseded' 记成 previous_status
-        decide(&conn, &id, RelationDecision::Accept, Some(ClaimRelationType::Supersedes))
+        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes))
             .unwrap();
         let row = get(&conn, &id).unwrap().unwrap();
         assert_eq!(row.target_previous_status.as_deref(), Some("verified"));
 
-        decide(&conn, &id, RelationDecision::Reset, None).unwrap();
+        decide(&conn, &id, ReviewAction::Reset, None).unwrap();
         assert_eq!(claim_status(&conn, &target), "verified");
     }
 
@@ -477,7 +555,7 @@ mod tests {
         let conn = memory_db();
         let (source, target, id) = seed_relation(&conn);
 
-        let rejected = decide(&conn, &id, RelationDecision::Reject, None).unwrap();
+        let rejected = decide(&conn, &id, ReviewAction::Reject, None).unwrap();
         assert_eq!(rejected.status, ClaimRelationStatus::Rejected);
         assert_eq!(claim_status(&conn, &source), "verified");
         assert_eq!(claim_status(&conn, &target), "verified");
@@ -487,7 +565,7 @@ mod tests {
     fn a_contradiction_never_touches_claim_status() {
         let conn = memory_db();
         let (source, target, id) = seed_relation(&conn);
-        decide(&conn, &id, RelationDecision::Accept, None).unwrap();
+        decide(&conn, &id, ReviewAction::Accept, None).unwrap();
         assert_eq!(claim_status(&conn, &source), "verified");
         assert_eq!(claim_status(&conn, &target), "verified");
     }
@@ -498,7 +576,7 @@ mod tests {
         let err = decide(
             &conn,
             &ClaimRelationId::from_raw("missing"),
-            RelationDecision::Accept,
+            ReviewAction::Accept,
             None,
         )
         .unwrap_err();
@@ -526,6 +604,7 @@ mod tests {
             status: ClaimStatus::Verified,
             valid_from: None,
             valid_until: None,
+            observed_at: None,
             recorded_at: String::new(),
             created_at: String::new(),
         };
@@ -568,7 +647,7 @@ mod tests {
         assert_eq!(count_potential_duplicates(&conn).unwrap(), 0);
         assert_eq!(count_unresolved_conflicts(&conn).unwrap(), 1);
 
-        decide(&conn, &id, RelationDecision::Accept, None).unwrap();
+        decide(&conn, &id, ReviewAction::Accept, None).unwrap();
         assert_eq!(count_unresolved_conflicts(&conn).unwrap(), 0);
 
         insert(
@@ -589,7 +668,7 @@ mod tests {
     fn relations_for_a_claim_include_both_directions_with_accepted_first() {
         let conn = memory_db();
         let (source, target, id) = seed_relation(&conn);
-        decide(&conn, &id, RelationDecision::Accept, None).unwrap();
+        decide(&conn, &id, ReviewAction::Accept, None).unwrap();
 
         let rows = list_for_claim(&conn, &source).unwrap();
         assert_eq!(rows.len(), 1);
@@ -597,5 +676,100 @@ mod tests {
 
         let rows = list_for_claim(&conn, &target).unwrap();
         assert_eq!(rows.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 2：演化不变量 / 事件日志 / 事务原子性
+    // -----------------------------------------------------------------------
+
+    /// TEST-002：全库演化不变量自检。
+    fn assert_evolution_invariants(conn: &Connection) {
+        // INV-08：任何 superseded 的 claim 必须有一条 accepted 的 supersedes 指向它。
+        let orphan: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM claims c
+                 WHERE c.status = 'superseded'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM claim_relations r
+                     WHERE r.target_claim_id = c.id
+                       AND r.relationship = 'supersedes'
+                       AND r.status = 'accepted'
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphan, 0, "存在没有 accepted supersedes 支撑的 superseded claim");
+
+        // 反向：accepted 的 supersedes 的 target 必须是 superseded。
+        let dangling: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM claim_relations r
+                 JOIN claims c ON c.id = r.target_claim_id
+                 WHERE r.relationship = 'supersedes' AND r.status = 'accepted'
+                   AND c.status <> 'superseded'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(dangling, 0, "accepted supersedes 的 target 却不是 superseded");
+    }
+
+    #[test]
+    fn every_decision_appends_an_immutable_evolution_event() {
+        let conn = memory_db();
+        let (_, target, id) = seed_relation(&conn);
+
+        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
+        decide(&conn, &id, ReviewAction::Reset, None).unwrap();
+
+        let events = list_events(&conn, &id).unwrap();
+        assert_eq!(events.len(), 2, "Revert 必须新增事件，而不是覆盖历史");
+        assert_eq!(events[0].status, ClaimRelationStatus::Accepted);
+        assert_eq!(events[0].relationship, ClaimRelationType::Supersedes);
+        assert_eq!(events[0].target_status_before.as_deref(), Some("verified"));
+        assert_eq!(events[0].target_status_after.as_deref(), Some("superseded"));
+
+        assert_eq!(events[1].status, ClaimRelationStatus::Candidate);
+        assert_eq!(events[1].target_status_before.as_deref(), Some("superseded"));
+        assert_eq!(events[1].target_status_after.as_deref(), Some("verified"));
+
+        assert_eq!(claim_status(&conn, &target), "verified");
+        assert_evolution_invariants(&conn);
+    }
+
+    #[test]
+    fn rejects_and_non_supersede_accepts_keep_invariants_and_touch_no_status() {
+        let conn = memory_db();
+        let (source, target, id) = seed_relation(&conn);
+
+        // 拒绝：不改任何 claim 状态。
+        decide(&conn, &id, ReviewAction::Reject, None).unwrap();
+        assert_eq!(claim_status(&conn, &source), "verified");
+        assert_eq!(claim_status(&conn, &target), "verified");
+        // contradicts + accept：同样不产生 superseded。
+        decide(&conn, &id, ReviewAction::Accept, None).unwrap();
+        assert_eq!(claim_status(&conn, &target), "verified");
+        assert_evolution_invariants(&conn);
+    }
+
+    /// CORE-004：`decide` 可组合进调用方事务，且整体回滚不留部分状态。
+    #[test]
+    fn decide_is_atomic_when_the_caller_rolls_back() {
+        let mut conn = memory_db();
+        let (_, target, id) = seed_relation(&conn);
+
+        {
+            let tx = conn.transaction().unwrap();
+            decide(&tx, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
+            assert_eq!(claim_status(&tx, &target), "superseded");
+            tx.rollback().unwrap();
+        }
+
+        assert_eq!(claim_status(&conn, &target), "verified", "回滚后不得残留状态变更");
+        assert!(
+            list_events(&conn, &id).unwrap().is_empty(),
+            "回滚后不得残留事件"
+        );
     }
 }

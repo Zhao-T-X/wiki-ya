@@ -8,7 +8,7 @@ import { create } from 'zustand';
  */
 
 export type ModuleId =
-  | 'inbox'
+  | 'home'
   | 'knowledge'
   | 'search'
   | 'review'
@@ -38,7 +38,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  activeModule: 'inbox',
+  activeModule: 'home',
   commandPaletteOpen: false,
   theme: 'dark',
   reviewFilter: null,

@@ -6,9 +6,11 @@
 use rusqlite::Connection;
 
 use crate::application::dto::{ClaimRelationCard, DecideRelationInput, ReviewItem};
+use crate::application::evolution_service;
 use crate::application::knowledge_service::to_relation_card_dto;
 use crate::domain::common::ids::ClaimRelationId;
 use crate::domain::evolution::classifier::ClaimRelationType;
+use crate::domain::evolution::decision::ReviewAction;
 use crate::domain::review::review::describe;
 use crate::domain::review::rules::review_priority;
 use crate::error::{AppError, AppResult};
@@ -46,11 +48,11 @@ pub fn list_review_items(conn: &Connection, limit: usize) -> AppResult<Vec<Revie
 }
 
 /// 解析审核决策字符串。
-fn parse_decision(raw: &str) -> AppResult<claim_relation_repository::RelationDecision> {
+fn parse_action(raw: &str) -> AppResult<ReviewAction> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "accept" => Ok(claim_relation_repository::RelationDecision::Accept),
-        "reject" => Ok(claim_relation_repository::RelationDecision::Reject),
-        "reset" => Ok(claim_relation_repository::RelationDecision::Reset),
+        "accept" => Ok(ReviewAction::Accept),
+        "reject" => Ok(ReviewAction::Reject),
+        "reset" => Ok(ReviewAction::Reset),
         other => Err(AppError::Invalid(format!(
             "未知的审核决策 {other:?}（可选 accept / reject / reset）"
         ))),
@@ -59,14 +61,13 @@ fn parse_decision(raw: &str) -> AppResult<claim_relation_repository::RelationDec
 
 /// 提交一次审核决策。
 ///
-/// `relationship` 允许被修正：用户可能判断"这不是取代，而是补充"。
-/// 修正关系类型本身不会绕过任何校验——`supersedes` 的副作用仍然只在
-/// `accept` 时发生，且回滚锚点只记录一次。
+/// 只做「解析输入 → 交给 Application 编排」。状态迁移规则与事务都在
+/// [`evolution_service::decide_relation`] 与领域层，本函数不写业务逻辑。
 pub fn decide_relation(
     conn: &mut Connection,
     input: DecideRelationInput,
 ) -> AppResult<ClaimRelationCard> {
-    let decision = parse_decision(&input.decision)?;
+    let action = parse_action(&input.decision)?;
 
     let relationship_override = match input
         .relationship
@@ -83,15 +84,7 @@ pub fn decide_relation(
         return Err(AppError::Invalid("relationId 不能为空".into()));
     }
 
-    let transaction = conn.transaction()?;
-    let row = claim_relation_repository::decide(
-        &transaction,
-        &relation_id,
-        decision,
-        relationship_override,
-    )?;
-    transaction.commit()?;
-
+    let row = evolution_service::decide_relation(conn, &relation_id, action, relationship_override)?;
     Ok(to_relation_card_dto(&row))
 }
 
@@ -159,6 +152,7 @@ mod tests {
             chunk_id: None,
             quote: Some("OpenAI 的 CEO 是 Sam。".into()),
             status: None,
+            observed_at: None,
         }
     }
 

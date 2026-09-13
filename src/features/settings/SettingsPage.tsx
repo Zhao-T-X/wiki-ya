@@ -40,9 +40,9 @@ interface HealthMetric {
 const HEALTH_METRICS: HealthMetric[] = [
   { key: 'potentialDuplicates', label: '潜在重复', tone: 'warn', filter: 'duplicate' },
   { key: 'unresolvedConflicts', label: '未解决冲突', tone: 'danger', filter: 'contradicts' },
-  { key: 'claimsWithoutEvidence', label: '无证据 Claim', tone: 'warn', filter: null, hint: '需在 Knowledge 逐条补证据' },
+  { key: 'claimsWithoutEvidence', label: '无证据知识', tone: 'warn', filter: null, hint: '需在 Knowledge 逐条补证据' },
   { key: 'unresolvedEntities', label: '未解决实体', tone: 'warn', filter: null, hint: '需在 Knowledge 合并/确认' },
-  { key: 'supersededClaims', label: '已取代 Claim', tone: 'neutral', filter: 'supersedes' },
+  { key: 'supersededClaims', label: '历史知识', tone: 'neutral', filter: 'supersedes' },
 ];
 
 type RegistryTabId =
@@ -264,7 +264,7 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Settings" subtitle="应用信息、Knowledge Health 与受控词表浏览器。" />
+      <PageHeader title="Settings" subtitle="AI 配置、外观与系统状态。不确定的选项可以先不管，默认值即可用。" />
 
       <section>
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">应用信息</h2>
@@ -310,7 +310,7 @@ export function SettingsPage() {
             <div className="flex items-center justify-between px-4 py-3 text-xs">
               <span className="text-muted">AI 运行时</span>
               <Badge tone={info.aiEnabled ? 'ok' : 'neutral'}>
-                {info.aiEnabled ? '已启用' : '未启用（Phase 6）'}
+                {info.aiEnabled ? '已启用' : '未启用'}
               </Badge>
             </div>
           </Card>
@@ -326,11 +326,19 @@ export function SettingsPage() {
 
         <Card className="space-y-4 p-5">
           <p className="text-[11px] leading-relaxed text-muted">
-            配置 OpenAI 兼容接口（含本地推理服务，如 Ollama / vLLM）。
-            「Chat 模型」与「向量模型」均可独立修改；保存后立即对新请求生效，无需重启。
+            配置后即可自动抽取知识、回答问题、做语义检索。不配置也能正常使用全部本地功能。
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-medium text-muted">模型</span>
+              <Input
+                value={aiForm.model}
+                onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
+                placeholder="gpt-4o-mini"
+                autoComplete="off"
+              />
+            </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] font-medium text-muted">API Key</span>
               <Input
@@ -345,46 +353,45 @@ export function SettingsPage() {
                 autoComplete="off"
               />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium text-muted">接口基址</span>
-              <Input
-                value={aiForm.baseUrl}
-                onChange={(e) => setAiForm((f) => ({ ...f, baseUrl: e.target.value }))}
-                placeholder="https://api.openai.com/v1"
-                autoComplete="off"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium text-muted">Chat 模型</span>
-              <Input
-                value={aiForm.model}
-                onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
-                placeholder="gpt-4o-mini"
-                autoComplete="off"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium text-muted">向量模型</span>
-              <Input
-                value={aiForm.embeddingModel}
-                onChange={(e) => setAiForm((f) => ({ ...f, embeddingModel: e.target.value }))}
-                placeholder="text-embedding-3-small"
-                autoComplete="off"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium text-muted">上下文预算（token）</span>
-              <Input
-                type="number"
-                min={256}
-                step={256}
-                value={aiForm.tokenBudget}
-                onChange={(e) => setAiForm((f) => ({ ...f, tokenBudget: e.target.value }))}
-                placeholder="4000"
-                autoComplete="off"
-              />
-            </label>
           </div>
+
+          <details className="rounded-lg border border-line bg-canvas px-3 py-2">
+            <summary className="cursor-pointer text-[11px] font-medium text-muted">
+              高级（接口基址 / 向量模型 / 上下文预算）
+            </summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-muted">接口基址</span>
+                <Input
+                  value={aiForm.baseUrl}
+                  onChange={(e) => setAiForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                  placeholder="https://api.openai.com/v1"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-muted">向量模型</span>
+                <Input
+                  value={aiForm.embeddingModel}
+                  onChange={(e) => setAiForm((f) => ({ ...f, embeddingModel: e.target.value }))}
+                  placeholder="text-embedding-3-small"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-muted">上下文预算（token）</span>
+                <Input
+                  type="number"
+                  min={256}
+                  step={256}
+                  value={aiForm.tokenBudget}
+                  onChange={(e) => setAiForm((f) => ({ ...f, tokenBudget: e.target.value }))}
+                  placeholder="4000"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+          </details>
 
           {aiError ? <ErrorNotice error={aiError} /> : null}
 
@@ -448,7 +455,7 @@ export function SettingsPage() {
               <Stat label="文档" value={report.totalDocuments} />
               <Stat label="片段" value={report.totalChunks} />
               <Stat label="实体" value={report.totalEntities} />
-              <Stat label="Claim" value={report.totalClaims} />
+              <Stat label="知识" value={report.totalClaims} />
               <Stat label="证据" value={report.totalEvidence} />
             </div>
 
@@ -470,39 +477,43 @@ export function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">受控词表</h2>
-        <p className="mb-3 text-[11px] leading-relaxed text-muted">
-          复杂性归系统、不归 UI —— 词表是高级设置的一部分，通常无需关心。这里只做只读浏览。
-        </p>
+        <details className="rounded-xl border border-line bg-surface px-4 py-3">
+          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-muted">
+            高级：受控词表（Ontology）
+          </summary>
+          <p className="mb-3 mt-3 text-[11px] leading-relaxed text-muted">
+            复杂性归系统、不归 UI。词表只在排查问题时才用得到，这里只做只读浏览。
+          </p>
 
-        {registries.error ? <ErrorNotice error={registries.error} /> : null}
+          {registries.error ? <ErrorNotice error={registries.error} /> : null}
 
-        {registries.data ? (
-          <Card className="p-4">
-            <div className="mb-4 flex flex-wrap gap-2 border-b border-line pb-3">
-              {REGISTRY_TABS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setTab(item.id)}
-                  className={cn(
-                    'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
-                    tab === item.id
-                      ? 'border-accent/40 bg-accent/10 text-accent'
-                      : 'border-line bg-elevated text-muted hover:text-ink',
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-              <span className="ml-auto self-center font-mono text-[10px] text-muted">
-                {registries.data.registryVersion}
-              </span>
-            </div>
+          {registries.data ? (
+            <Card className="p-4">
+              <div className="mb-4 flex flex-wrap gap-2 border-b border-line pb-3">
+                {REGISTRY_TABS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setTab(item.id)}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                      tab === item.id
+                        ? 'border-accent/40 bg-accent/10 text-accent'
+                        : 'border-line bg-elevated text-muted hover:text-ink',
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <span className="ml-auto self-center font-mono text-[10px] text-muted">
+                  {registries.data.registryVersion}
+                </span>
+              </div>
 
-            <RegistryContent tab={tab} registries={registries.data} />
-          </Card>
-        ) : null}
+              <RegistryContent tab={tab} registries={registries.data} />
+            </Card>
+          ) : null}
+        </details>
       </section>
     </div>
   );

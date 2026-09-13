@@ -520,6 +520,7 @@ mod tests {
             status: ClaimStatus::Candidate,
             valid_from: None,
             valid_until: None,
+            observed_at: None,
             recorded_at: String::new(),
             created_at: String::new(),
         };

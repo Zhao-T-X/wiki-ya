@@ -39,10 +39,24 @@ impl AiConfig {
         const DEFAULT_MODEL: &str = "gpt-4o-mini";
         const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
 
-        let api_key = settings_repository::get_setting(conn, KEY_API_KEY)
+        // SEC-001：API Key 以 AES-256-GCM 密文存在 SQLite（`ai.api_key.enc`）；
+        // 为兼容尚未迁移完成的旧库，再回退到 `ai.api_key` 明文；最后才是环境变量。
+        // 读取失败一律视为「没有」，绝不让 AI 因为存储层异常而崩溃。
+        let api_key = crate::infrastructure::secrets::load_api_key(conn)
             .ok()
             .flatten()
-            .filter(|value| !value.trim().is_empty());
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                settings_repository::get_setting(conn, KEY_API_KEY)
+                    .ok()
+                    .flatten()
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .or_else(|| {
+                std::env::var("WIKIYA_API_KEY")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            });
 
         let resolve = |key: &str, env: Option<String>, default: &str| -> String {
             if let Ok(Some(value)) = settings_repository::get_setting(conn, key) {

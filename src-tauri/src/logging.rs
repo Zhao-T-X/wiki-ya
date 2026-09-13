@@ -10,6 +10,9 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
+
+use regex::Regex;
 
 /// 日志级别（数值越大越啰嗦）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -103,12 +106,69 @@ pub fn enabled(level: Level) -> bool {
 }
 
 /// 真正写日志。格式：`2026-09-13 16:42:36.346 [DEBUG] 正文`。
+///
+/// 所有日志都会先过 [`redact`]：即使调用方误把密钥/Token 拼进日志，
+/// 也不会泄露到终端或日志文件（SEC-003）。
 pub fn log(level: Level, args: fmt::Arguments) {
     if !enabled(level) {
         return;
     }
     let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    eprintln!("{ts} [{}] {args}", level.tag());
+    let message = redact(&args.to_string());
+    eprintln!("{ts} [{}] {message}", level.tag());
+}
+
+/// 密钥脱敏（SEC-003）：屏蔽 `Bearer xxx`、`sk-xxx` 以及
+/// `api_key` / `token` / `secret` / `password` 等敏感字段的值。
+///
+/// 允许保留「是否存在」的信息（如 `api_key_set=true`），但绝不保留值本身。
+pub fn redact(text: &str) -> String {
+    /// 规则集（进程内编译一次）。
+    fn rules() -> &'static [Regex; 3] {
+        static RULES: OnceLock<[Regex; 3]> = OnceLock::new();
+        RULES.get_or_init(|| {
+            [
+                // Bearer <token>
+                Regex::new(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]+").expect("bearer 规则"),
+                // 常见密钥前缀（OpenAI / 多数兼容端点）
+                Regex::new(r"\bsk-[A-Za-z0-9_\-]{6,}").expect("sk 规则"),
+                // 敏感字段赋值：api_key / apikey / token / secret / password
+                Regex::new(
+                    r#"(?i)(api[_-]?key|apikey|token|secret|password)(\s*["']?\s*[:=]\s*["']?)([^\s"',}]{4,})"#,
+                )
+                .expect("字段规则"),
+            ]
+        })
+    }
+
+    let rules = rules();
+    let out = rules[0].replace_all(text, "$1 ***");
+    let out = rules[1].replace_all(&out, "sk-***");
+    rules[2].replace_all(&out, "$1$2***").into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_bearer_tokens_and_openai_keys() {
+        assert_eq!(redact("Authorization: Bearer abc.def-123_XYZ"), "Authorization: Bearer ***");
+        assert_eq!(redact("key=sk-abcdef123456"), "key=sk-***");
+    }
+
+    #[test]
+    fn redacts_sensitive_field_values_but_keeps_presence() {
+        let out = redact(r#"{"api_key":"sk-live-999","api_key_set":true}"#);
+        assert!(!out.contains("sk-live-999"));
+        assert!(out.contains("api_key_set"));
+        assert!(redact("token=abcdefgh password=hunter22").contains("***"));
+    }
+
+    #[test]
+    fn keeps_ordinary_text_intact() {
+        assert_eq!(redact("model=gpt-4o-mini max_tokens=8192"), "model=gpt-4o-mini max_tokens=8192");
+    }
 }
 
 /// 把长文本截断（取头部），用于日志里回显响应体。

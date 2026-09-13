@@ -4,7 +4,7 @@
 //! 用户依然必须能够建立结构化知识（PRD §44）。因此这条路径上的校验
 //! 与 AI 抽取走的是**同一套**领域规则——不注册的谓语一律拒绝。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rusqlite::Connection;
 
@@ -15,7 +15,8 @@ use crate::application::dto::{
 use crate::domain::common::ids::{ClaimId, DocumentId, EntityId};
 use crate::domain::evidence::evidence::{choose_level, Evidence, DEFAULT_MAX_LEVEL};
 use crate::domain::evolution::conflict::ClaimView;
-use crate::domain::evolution::temporal::{resolve_current, Lifecycle, Validity};
+use crate::domain::evolution::temporal::Validity;
+use crate::domain::evolution::KnowledgeResolver;
 use crate::domain::graph::graph::{explore, GraphEdge as DomainGraphEdge, NodeSeed};
 use crate::domain::knowledge::claim::{
     Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity,
@@ -66,6 +67,7 @@ fn to_claim_card(row: &claim_repository::ClaimRow, lifecycle: &str) -> ClaimCard
         status: row.claim.status.as_str().to_string(),
         valid_from: row.claim.valid_from.clone(),
         valid_until: row.claim.valid_until.clone(),
+        observed_at: row.claim.observed_at.clone(),
         source_document_id: row.source_document_id.as_ref().map(|id| id.as_str().to_string()),
         source_document_title: row.source_document_title.clone(),
         source_quote: row.source_quote.clone(),
@@ -99,10 +101,8 @@ pub fn to_claim_cards_with_lifecycle(
         .collect();
 
     let now = db::now(conn)?;
-    let derived: HashMap<String, Lifecycle> = resolve_current(&views, &validities, &now)
-        .into_iter()
-        .map(|resolved| (resolved.id.into_string(), resolved.lifecycle))
-        .collect();
+    // ARCH-001：当前知识一律经统一入口派生，禁止调用方各自实现。
+    let derived = KnowledgeResolver::lifecycle_map(&views, &validities, &now);
 
     Ok(rows
         .iter()
@@ -473,6 +473,12 @@ pub fn create_claim(conn: &mut Connection, input: CreateClaimInput) -> AppResult
         // 时间有效性来源尚未确定（决策 D2）：一律留空，表示"始终有效"。
         valid_from: None,
         valid_until: None,
+        // CORE-001：来源观察时间由调用方显式提供；不提供即未知，**绝不自动填当前时间**。
+        observed_at: input
+            .observed_at
+            .clone()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
         recorded_at: String::new(),
         created_at: String::new(),
     };
@@ -608,6 +614,7 @@ mod tests {
             chunk_id: None,
             quote: None,
             status: None,
+            observed_at: None,
         }
     }
 
@@ -745,6 +752,41 @@ mod tests {
         let detail = get_claim(&conn, &ClaimId::from_raw(&card.id)).unwrap();
         assert_eq!(detail.claim.lifecycle, "excluded", "错误知识不能被标成历史");
         assert_eq!(detail.claim.status, "rejected");
+    }
+
+    /// CORE-001：observed_at 显式提供则原样保存；不提供保持 NULL（**禁止猜测**）。
+    #[test]
+    fn observed_at_is_stored_verbatim_and_never_guessed() {
+        let mut conn = memory_db();
+        let document = seed_document(&mut conn, "body");
+
+        let mut with_time = manual("Rust", "uses", Some("SQLite"), &document);
+        with_time.observed_at = Some("2024-03-01 00:00:00".into());
+        let card = create_claim(&mut conn, with_time).unwrap();
+        assert_eq!(card.observed_at.as_deref(), Some("2024-03-01 00:00:00"));
+
+        let without_time =
+            create_claim(&mut conn, manual("Rust", "supports", Some("WASM"), &document)).unwrap();
+        assert!(
+            without_time.observed_at.is_none(),
+            "没有明确时间时必须留空，不能自动填当前时间"
+        );
+    }
+
+    /// K-004：时间字段职责契约。
+    ///
+    /// - `created_at` = 系统写入时间，由数据库填充（非空）；
+    /// - `valid_from` / `valid_until` / `observed_at` = 语义时间，**默认留空**（不猜）。
+    #[test]
+    fn temporal_contract_defaults_are_honest() {
+        let mut conn = memory_db();
+        let document = seed_document(&mut conn, "body");
+        let card = create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
+
+        assert!(card.valid_from.is_none(), "valid_from 不应被自动推断");
+        assert!(card.valid_until.is_none(), "valid_until 不应被自动推断");
+        assert!(card.observed_at.is_none(), "observed_at 不应被自动推断");
+        assert!(!card.created_at.is_empty(), "created_at 由数据库填充");
     }
 
     #[test]

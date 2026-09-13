@@ -142,7 +142,10 @@ impl Modality {
     pub fn canonical(raw: &str) -> AppResult<Modality> {
         let key = raw.trim().to_ascii_lowercase();
         let mapped = match key.as_str() {
-            "actual" | "definite" | "certain" => "asserted",
+            // 自然语言系词 / 陈述类表达一律归一为断言语气：模型常把 "is"/"陈述句"
+            // 当成"语气"字段返回，它们本质就是 asserted 事实陈述。
+            "actual" | "definite" | "certain" | "is" | "are" | "was" | "were"
+            | "陈述" | "陈述句" | "declarative" | "statement" | "assertion" => "asserted",
             "maybe" => "possible",
             "likely" | "probably" => "probable",
             "can" | "able" => "capable",
@@ -223,6 +226,15 @@ pub struct Claim {
     /// 避免因为缺时间而丢掉知识。
     pub valid_from: Option<Timestamp>,
     pub valid_until: Option<Timestamp>,
+
+    /// 来源材料中**明确观察到**该知识的时间（CORE-001）。
+    ///
+    /// 与 `recorded_at`（系统写入时间）严格区分：后者是"系统何时知道"，
+    /// 前者是"来源何时记录"。抽取不出时一律为 `None`，**禁止猜测**
+    /// （不能因为文本说"现在"就填今天）。
+    pub observed_at: Option<Timestamp>,
+
+    /// 系统**写入**这条知识的时间（由数据库 `datetime('now')` 默认值填充）。
     pub recorded_at: Timestamp,
     pub created_at: Timestamp,
 }
@@ -281,6 +293,10 @@ mod tests {
         assert_eq!(Polarity::canonical("TRUE").unwrap(), Polarity::Positive);
         assert_eq!(Modality::canonical("must").unwrap(), Modality::Necessary);
         assert_eq!(Modality::canonical("likely").unwrap(), Modality::Probable);
+        // 模型误把系词/陈述类当语气返回，应归一为断言语气。
+        assert_eq!(Modality::canonical("is").unwrap(), Modality::Asserted);
+        assert_eq!(Modality::canonical("陈述句").unwrap(), Modality::Asserted);
+        assert_eq!(Modality::canonical("declarative").unwrap(), Modality::Asserted);
     }
 
     #[test]

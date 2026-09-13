@@ -149,7 +149,7 @@ export function CreateClaimDialog({
         {documents.error ? <ErrorNotice error={documents.error} /> : null}
         {docs && docs.length === 0 ? (
           <ErrorNotice tone="warn">
-            当前没有任何文档。请先到 Inbox 捕获内容 —— Claim 必须挂在真实来源文档上。
+            当前没有任何文档。请先到 Home 捕获内容 —— 知识必须挂在真实来源文档上。
           </ErrorNotice>
         ) : null}
 

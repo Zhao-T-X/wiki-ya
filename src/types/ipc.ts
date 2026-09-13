@@ -222,6 +222,8 @@ export interface ClaimCard {
   modality: string;
   confidence: number | null;
   status: string;
+  /** 来源观察时间（CORE-001）；未知为 null（系统不猜时间）。 */
+  observedAt: string | null;
   /** 来源文档可缺失（迁移导入、无文档来源的手工 Claim）→ 可空。 */
   sourceDocumentId: string | null;
   sourceDocumentTitle: string | null;
@@ -277,6 +279,8 @@ export interface CreateClaimInput {
   quote?: string | null;
   /** 默认 candidate */
   status?: string;
+  /** 来源观察时间（CORE-001）；不传即为未知，后端不会自动填当前时间 */
+  observedAt?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +408,51 @@ export interface ExtractionReport {
   enabled: boolean;
   note: string | null;
   extracted: ExtractedClaim[];
+}
+
+// ---------------------------------------------------------------------------
+// 1.6.1 Extraction Run（EXTRACTION-001：异步抽取后台任务）
+// ---------------------------------------------------------------------------
+
+/** 一条抽取运行的快照（前端轮询 / 事件后回看用）。 */
+export interface ExtractionRunDto {
+  id: string;
+  documentId: string;
+  /** queued | running | completed | failed | cancelled | interrupted */
+  status: string;
+  /** preparing | chunking | extracting | validating | comparing | finalizing */
+  stage: string;
+  totalChunks: number;
+  processedChunks: number;
+  candidatesFound: number;
+  changesFound: number;
+  /** 完成后的抽取结果（JSON 字符串，序列化自 ExtractionReport），未完成为 null */
+  resultJson: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+/** 后台运行实时事件（经 Tauri 频道 `extraction-events` 推送）。 */
+export interface ExtractionEvent {
+  type:
+    | 'started'
+    | 'stage_changed'
+    | 'progress'
+    | 'candidate_found'
+    | 'comparison_completed'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
+  runId: string;
+  documentId?: string;
+  stage?: string;
+  processed?: number;
+  total?: number;
+  count?: number;
+  changes?: number;
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------

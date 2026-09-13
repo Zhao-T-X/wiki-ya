@@ -269,7 +269,7 @@ export function ResearchPage() {
 
       <div className="mt-4 flex items-center gap-2 text-xs text-muted">
         <ResearchIcon className="h-4 w-4" />
-        研究结果只进 Review，不直接落库；当前可用的替代路径：Inbox 捕获、Knowledge 手动录入、Review 决策。
+        研究结果只进 Review，不直接落库；当前可用的替代路径：Home 捕获、Knowledge 手动录入、Review 决策。
       </div>
     </div>
   );

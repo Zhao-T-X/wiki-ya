@@ -108,7 +108,7 @@ export function KnowledgePage() {
           {!entities.loading && entityList.length === 0 ? (
             <EmptyState
               title="没有匹配的实体"
-              description="换一个关键字，或先在 Inbox 捕获内容。"
+              description="换一个关键字，或先在 Home 捕获内容。"
               icon={<KnowledgeIcon className="h-5 w-5" />}
             />
           ) : null}

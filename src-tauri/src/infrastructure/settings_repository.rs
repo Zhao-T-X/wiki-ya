@@ -30,6 +30,15 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// 删除单个设置（不存在时为空操作）。
+///
+/// 用于 SEC-002：把明文 API Key 迁移到安全存储后，必须**物理删除**这一行，
+/// 而不是仅写空串。
+pub fn delete_setting(conn: &Connection, key: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

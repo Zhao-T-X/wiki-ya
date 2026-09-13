@@ -9,6 +9,7 @@ use crate::application::dto::{
     AiSettings, AppInfo, EntityTypeOption, HealthReport, Registries, RelationPredicateOption,
     UpdateAiSettings,
 };
+use crate::infrastructure::secrets;
 use crate::infrastructure::settings_repository;
 use crate::domain::evidence::evidence::EvidenceLevel;
 use crate::domain::knowledge::claim::{ClaimStatus, ClaimType, Modality, Polarity};
@@ -72,11 +73,19 @@ pub fn get_ai_settings(conn: &Connection) -> AppResult<AiSettings> {
 ///
 /// `apiKey` 传空字符串表示显式清除；其余字段仅当提供时才覆盖，便于部分更新。
 pub fn update_ai_settings(conn: &mut Connection, req: UpdateAiSettings) -> AppResult<AiSettings> {
-    // 整组更新放在一个事务里：避免中途失败留下「一半新一半旧」的 AI 配置。
-    let tx = conn.transaction()?;
+    // SEC-001：API Key 属于机密，经 AES-256-GCM 加密后写入 SQLite，**绝不落明文**。
     if let Some(api_key) = req.api_key {
-        settings_repository::set_setting(&tx, "ai.api_key", api_key.trim())?;
+        let trimmed = api_key.trim();
+        if trimmed.is_empty() {
+            // 空字符串 = 显式清除（同时清掉历史明文行）。
+            secrets::clear_api_key(conn)?;
+        } else {
+            secrets::save_api_key(conn, trimmed)?;
+        }
     }
+
+    // 其余非敏感配置整组放在一个事务里：避免中途失败留下「一半新一半旧」。
+    let tx = conn.transaction()?;
     if let Some(base_url) = req.base_url {
         settings_repository::set_setting(&tx, "ai.base_url", base_url.trim())?;
     }

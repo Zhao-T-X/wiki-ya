@@ -27,6 +27,7 @@ import type {
   EvidenceCard,
   ExtractClaimsInput,
   ExtractionReport,
+  ExtractionRunDto,
   AskRequest,
   AskResponse,
   AiSettings,
@@ -258,6 +259,26 @@ export function decide_claim_relation(
 
 export function extract_claims(input: ExtractClaimsInput): Promise<ExtractionReport> {
   return call<ExtractionReport>('extract_claims', input);
+}
+
+// ---------------------------------------------------------------------------
+// 1.6.1 Extraction Run（EXTRACTION-001：异步抽取后台任务）
+// ---------------------------------------------------------------------------
+
+export function start_extraction(input: { id: string }): Promise<string> {
+  return call<string>('start_extraction', input);
+}
+
+export function get_extraction_run(input: { id: string }): Promise<ExtractionRunDto> {
+  return call<ExtractionRunDto>('get_extraction_run', input);
+}
+
+export function list_extraction_runs(input?: { limit?: number }): Promise<ExtractionRunDto[]> {
+  return call<ExtractionRunDto[]>('list_extraction_runs', input ?? {});
+}
+
+export function cancel_extraction(input: { id: string }): Promise<boolean> {
+  return call<boolean>('cancel_extraction', input);
 }
 
 // ---------------------------------------------------------------------------

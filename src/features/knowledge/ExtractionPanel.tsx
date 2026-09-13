@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -8,11 +8,22 @@ import { Spinner } from '@/components/ui/Spinner';
 import { SparkIcon } from '@/components/icons';
 import {
   analyze_document,
+  cancel_extraction,
   create_claim,
-  extract_claims,
+  get_extraction_run,
+  list_extraction_runs,
+  start_extraction,
   WikiError,
 } from '@/lib/api';
-import type { CreateClaimInput, ExtractedClaim, ExtractionReport } from '@/types/ipc';
+import { useExtractionEvents } from '@/lib/useExtractionEvents';
+import { isTerminal, STATUS_LABEL, STAGE_LABEL } from '@/lib/extraction';
+import type {
+  CreateClaimInput,
+  ExtractedClaim,
+  ExtractionEvent,
+  ExtractionReport,
+  ExtractionRunDto,
+} from '@/types/ipc';
 
 interface ExtractionPanelProps {
   documentId: string;
@@ -25,43 +36,138 @@ function itemKey(item: ExtractedClaim): string {
 }
 
 /**
- * AI 抽取面板（Phase 5）。
+ * AI 抽取面板（EXTRACTION-001：异步 Run 化）。
  *
- * 只预览、不擅自落库：用户逐条或批量「接受」后，才调用既有的 `create_claim`
- * + `analyze_document`（复用 Review / Evolution 流程），由用户最终决定。
+ * 点击「分析知识」后**立即**拿到 `run_id` 返回，真正的抽取在后台跑；
+ * 面板订阅 `extraction-events` 实时呈现阶段与进度，并持久化到数据库——
+ * 页面关了 / 应用关了再回来都能续上（重开同文档会自动 resume 未结束的 Run）。
  *
- * 诚实优先：未配置 `WIKIYA_API_KEY` 时后端返回 `enabled: false` 与说明，
- * 这里原样展示「AI 未启用」，绝不伪造任何抽取结果（PRD「AI suggests, user decides」）。
+ * 候选仍只预览、不擅自落库：用户逐条或批量「接受」后才走 `create_claim`
+ * + `analyze_document`（复用 Review / Evolution 流程）。
  */
 export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPanelProps) {
+  const [run, setRun] = useState<ExtractionRunDto | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const [report, setReport] = useState<ExtractionReport | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<WikiError | null>(null);
   const [accepted, setAccepted] = useState<string[]>([]);
   const [accepting, setAccepting] = useState(false);
-  // 在途请求用 ref 同步记录：state 异步更新，光靠它无法阻止同一 tick 内的重复提交。
   const pendingRef = useRef<Set<string>>(new Set());
   const [pendingKeys, setPendingKeys] = useState<string[]>([]);
   const acceptingRef = useRef(false);
 
-  async function runExtraction() {
-    setLoading(true);
+  const applyRun = useCallback((next: ExtractionRunDto) => {
+    setRun(next);
+    if (isTerminal(next.status) && next.resultJson) {
+      try {
+        setReport(JSON.parse(next.resultJson) as ExtractionReport);
+      } catch {
+        // 结果 JSON 损坏：忽略，保留进度状态，不让面板崩。
+      }
+    }
+  }, []);
+
+  const onEvent = useCallback(
+    (event: ExtractionEvent) => {
+      setRun((prev) => {
+        if (!prev) return prev;
+        switch (event.type) {
+          case 'started':
+            return { ...prev, status: 'running' };
+          case 'stage_changed':
+            return { ...prev, stage: event.stage ?? prev.stage };
+          case 'progress':
+            return {
+              ...prev,
+              processedChunks: event.processed ?? prev.processedChunks,
+              totalChunks: event.total ?? prev.totalChunks,
+            };
+          case 'candidate_found':
+            return { ...prev, candidatesFound: event.count ?? prev.candidatesFound };
+          case 'comparison_completed':
+            return { ...prev, changesFound: event.changes ?? prev.changesFound };
+          case 'completed':
+            return { ...prev, status: 'completed' };
+          case 'failed':
+            return { ...prev, status: 'failed', errorMessage: event.error ?? prev.errorMessage };
+          case 'cancelled':
+            return { ...prev, status: 'cancelled' };
+          default:
+            return prev;
+        }
+      });
+      // 终态事件：拉一次完整快照（带 result_json）并解析结果。
+      if (
+        event.type === 'completed' ||
+        event.type === 'failed' ||
+        event.type === 'cancelled'
+      ) {
+        get_extraction_run({ id: event.runId }).then(applyRun).catch(() => {});
+      }
+    },
+    [applyRun],
+  );
+
+  useExtractionEvents(runId, onEvent);
+
+  // 初次进入 / 切换文档：自动 resume 本文档仍在跑的 Run（页面关了再回来也能续上）。
+  useEffect(() => {
+    if (!documentId) return;
+    list_extraction_runs({ limit: 50 })
+      .then((runs) => {
+        const pending = runs.find(
+          (r) => r.documentId === documentId && !isTerminal(r.status),
+        );
+        if (pending) {
+          setRunId(pending.id);
+          setRun(pending);
+        }
+      })
+      .catch(() => {});
+  }, [documentId]);
+
+  // run_id 确定后，拉一次初始快照（覆盖 resume 之外的创建瞬间）。
+  useEffect(() => {
+    if (!runId) return;
+    get_extraction_run({ id: runId }).then(applyRun).catch(() => {});
+  }, [runId, applyRun]);
+
+  // 兜底轮询：抽取进行中时每 1.2s 拉一次快照，避免事件遗漏导致 UI 卡住。
+  useEffect(() => {
+    if (!runId || (run && isTerminal(run.status))) return;
+    const timer = setInterval(() => {
+      get_extraction_run({ id: runId }).then(applyRun).catch(() => {});
+    }, 1200);
+    return () => clearInterval(timer);
+  }, [runId, run, applyRun]);
+
+  async function startRun() {
+    setStarting(true);
     setError(null);
-    setAccepted([]);
     setReport(null);
+    setAccepted([]);
     try {
-      const result = await extract_claims({ id: documentId });
-      setReport(result);
+      const id = await start_extraction({ id: documentId });
+      setRunId(id);
     } catch (cause: unknown) {
       setError(cause instanceof WikiError ? cause : new WikiError('INTERNAL_ERROR', String(cause)));
     } finally {
-      setLoading(false);
+      setStarting(false);
+    }
+  }
+
+  async function cancelRun() {
+    if (!runId) return;
+    try {
+      await cancel_extraction({ id: runId });
+    } catch (cause: unknown) {
+      setError(cause instanceof WikiError ? cause : new WikiError('INTERNAL_ERROR', String(cause)));
     }
   }
 
   async function acceptItem(item: ExtractedClaim) {
     const key = itemKey(item);
-    // 已接受或在途 → 忽略。否则双击 / 批量进行中再点单条会写入重复 Claim。
     if (pendingRef.current.has(key) || accepted.includes(key)) {
       return;
     }
@@ -104,7 +210,6 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
           await acceptItem(item);
         }
       }
-      // 一次性把新 Claim 与库内既有 Claim 做演化分析（duplicate / contradicts 等）。
       await analyze_document({ documentId });
       onClaimsAccepted();
     } catch (cause: unknown) {
@@ -118,23 +223,69 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   const acceptedSet = new Set(accepted);
   const pendingSet = new Set(pendingKeys);
 
+  const running = run ? !isTerminal(run.status) : false;
+
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">AI 抽取</h3>
-        <Button size="sm" variant="primary" loading={loading} onClick={runExtraction}>
-          <SparkIcon className="h-3.5 w-3.5" />
-          抽取 Claim
-        </Button>
+        {!running ? (
+          <Button size="sm" variant="primary" loading={starting} onClick={startRun}>
+            <SparkIcon className="h-3.5 w-3.5" />
+            分析知识
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={cancelRun}>
+            取消
+          </Button>
+        )}
       </div>
 
       {error ? <ErrorNotice error={error} className="mb-3" /> : null}
 
-      {loading ? (
-        <div className="flex items-center gap-2 py-4 text-xs text-muted">
-          <Spinner className="h-3.5 w-3.5" />
-          正在调用 AI 抽取…
-        </div>
+      {run && running ? (
+        <Card className="border-dashed border-line bg-surface/50 p-4">
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <Spinner className="h-3.5 w-3.5" />
+            <span>
+              {STATUS_LABEL[run.status] ?? run.status}
+              {run.stage ? ` · ${STAGE_LABEL[run.stage] ?? run.stage}` : ''}
+            </span>
+          </div>
+          {run.totalChunks > 0 ? (
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between text-[10px] text-muted">
+                <span>进度</span>
+                <span>
+                  {run.processedChunks} / {run.totalChunks} 块
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-accent transition-all"
+                  style={{
+                    width: `${run.totalChunks > 0 ? (run.processedChunks / run.totalChunks) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
+          {run.candidatesFound > 0 ? (
+            <p className="mt-2 text-[10px] text-muted">已发现 {run.candidatesFound} 条候选</p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {run && run.status === 'failed' ? (
+        <Card className="border-dashed border-line bg-surface/50 p-4 text-xs text-warn">
+          {run.errorMessage ?? '抽取失败。'}
+        </Card>
+      ) : null}
+
+      {run && run.status === 'interrupted' ? (
+        <Card className="border-dashed border-line bg-surface/50 p-4 text-xs text-muted">
+          该抽取在上次应用关闭时仍未完成，已被标记为中断。可重新点击「分析知识」再跑一次。
+        </Card>
       ) : null}
 
       {report && !report.enabled ? (
@@ -154,13 +305,17 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
               <span className="text-[10px] text-muted">
                 共 {report.extracted.filter((item) => item.accepted).length} 条通过校验，
                 {report.extracted.filter((item) => !item.accepted).length} 条已被排除
+                {run && run.changesFound > 0 ? ` · 约 ${run.changesFound} 条为新增` : ''}
               </span>
               <Button
                 size="sm"
                 variant="ghost"
                 loading={accepting}
                 onClick={acceptAll}
-                disabled={loading || accepting || report.extracted.every((item) => acceptedSet.has(itemKey(item)))}
+                disabled={
+                  accepting ||
+                  report.extracted.every((item) => acceptedSet.has(itemKey(item)))
+                }
               >
                 全部接受
               </Button>

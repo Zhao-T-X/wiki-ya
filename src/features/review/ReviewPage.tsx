@@ -19,10 +19,16 @@ import type { ClaimRelationDecision, ReviewItem } from '@/types/ipc';
 
 /** 契约映射：Accept→accept，Keep Both→reset，Reject→reject。 */
 const DECISIONS: { label: string; decision: ClaimRelationDecision; variant: 'primary' | 'secondary' | 'danger'; hint: string }[] = [
-  { label: 'Accept', decision: 'accept', variant: 'primary', hint: '接受建议的关系（supersedes 会让旧 Claim 进入 superseded）' },
-  { label: 'Keep Both', decision: 'reset', variant: 'secondary', hint: '回退该关系，保留两者（精确恢复 targetPreviousStatus）' },
-  { label: 'Reject', decision: 'reject', variant: 'danger', hint: '拒绝该关系，不改动任何 Claim' },
+  { label: 'Accept', decision: 'accept', variant: 'primary', hint: '接受建议的关系（supersedes 会让旧知识进入历史）' },
+  { label: 'Keep Both', decision: 'reset', variant: 'secondary', hint: '回退该关系，保留两者（精确恢复原状态）' },
+  { label: 'Reject', decision: 'reject', variant: 'danger', hint: '拒绝该关系，不改动任何知识' },
 ];
+
+const DECISION_LABELS: Record<ClaimRelationDecision, string> = {
+  accept: 'Accept',
+  reset: 'Keep Both',
+  reject: 'Reject',
+};
 
 export function ReviewPage() {
   const reviewFilter = useUiStore((state) => state.reviewFilter);
@@ -32,6 +38,8 @@ export function ReviewPage() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<WikiError | null>(null);
+  /** 处理成功的即时反馈：让"待办被消掉"这件事看得见。 */
+  const [lastDone, setLastDone] = useState<string | null>(null);
 
   const all = items.data ?? [];
   const relationshipTypes = useMemo(
@@ -49,8 +57,10 @@ export function ReviewPage() {
   async function decide(item: ReviewItem, decision: ClaimRelationDecision) {
     setBusyId(item.relation.id);
     setActionError(null);
+    setLastDone(null);
     try {
       await decide_claim_relation({ relationId: item.relation.id, decision });
+      setLastDone(`${relationshipLabel(item.relation.relationship)}：已按「${DECISION_LABELS[decision]}」处理。`);
       items.reload();
     } catch (cause: unknown) {
       setActionError(cause instanceof WikiError ? cause : new WikiError('INTERNAL_ERROR', String(cause)));
@@ -63,7 +73,11 @@ export function ReviewPage() {
     <div>
       <PageHeader
         title="Review"
-        subtitle="每一条知识变更都必须回答：改了什么 / 为什么 / 证据 / 影响。这里是你唯一能改变 Claim 状态的入口。"
+        subtitle={
+          !items.loading && visible.length > 0
+            ? `有 ${visible.length} 项知识变化等你决定。系统已经给出改了什么、为什么、证据与影响，你只需要选一个动作。`
+            : '系统会自动检查新知识是否与已有知识冲突；需要你判断时才会出现在这里。'
+        }
       />
 
       {relationshipTypes.length > 0 ? (
@@ -98,6 +112,9 @@ export function ReviewPage() {
 
       {items.error ? <ErrorNotice error={items.error} /> : null}
       {actionError ? <ErrorNotice error={actionError} className="mb-3" /> : null}
+      {lastDone ? (
+        <p className="mb-3 rounded-lg border border-ok/30 bg-ok/10 px-3 py-2 text-xs text-ok">{lastDone}</p>
+      ) : null}
 
       {items.loading && !items.data ? (
         <div className="flex items-center gap-2 py-6 text-xs text-muted">
@@ -136,23 +153,23 @@ export function ReviewPage() {
 
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-line bg-canvas p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">New（发起方）</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">新知识</p>
                   <p className="mt-1 text-xs leading-relaxed text-ink/90">{relation.sourceText}</p>
                   <Link
                     to={`/claims/${relation.sourceClaimId}`}
                     className="mt-1.5 inline-block text-[10px] text-accent hover:underline"
                   >
-                    查看该 Claim
+                    查看详情
                   </Link>
                 </div>
                 <div className="rounded-lg border border-line bg-canvas p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Existing（受影响方）</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">已有知识</p>
                   <p className="mt-1 text-xs leading-relaxed text-ink/90">{relation.targetText}</p>
                   <Link
                     to={`/claims/${relation.targetClaimId}`}
                     className="mt-1.5 inline-block text-[10px] text-accent hover:underline"
                   >
-                    查看该 Claim
+                    查看详情
                   </Link>
                 </div>
               </div>

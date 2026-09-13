@@ -8,6 +8,7 @@
 pub mod ai;
 pub mod ask;
 pub mod documents;
+pub mod extraction;
 pub mod knowledge;
 pub mod migration;
 pub mod research;
@@ -31,4 +32,16 @@ pub fn agent_sink(app: &tauri::AppHandle, enabled: bool) -> Option<crate::events
     Some(Arc::new(move |event| {
         let _ = app.emit("agent-events", event);
     }))
+}
+
+/// 构造 Extraction 事件发射器（EXTRACTION-001）：把事件经 Tauri 全局
+/// channel `extraction-events` 推给前端，供 UI 实时展示进度。
+///
+/// 与 `agent_sink` 不同，这里始终返回有效 sink——进度推送是 Run 的核心价值，
+/// 不需要"关闭"开关。
+pub fn extraction_sink(app: &tauri::AppHandle) -> crate::events::ExtractionSink {
+    let app = app.clone();
+    Arc::new(move |event| {
+        let _ = app.emit("extraction-events", event);
+    })
 }

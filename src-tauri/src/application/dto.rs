@@ -233,6 +233,8 @@ pub struct ClaimCard {
     pub status: String,
     pub valid_from: Option<String>,
     pub valid_until: Option<String>,
+    /// 来源观察时间（CORE-001）。未知为 `null` —— 系统**不猜**时间。
+    pub observed_at: Option<String>,
     pub source_document_id: Option<String>,
     pub source_document_title: Option<String>,
     pub source_quote: Option<String>,
@@ -295,6 +297,9 @@ pub struct CreateClaimInput {
     pub quote: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    /// 来源观察时间（CORE-001）。不提供即视为未知（留 NULL），不会自动填今天。
+    #[serde(default)]
+    pub observed_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +513,33 @@ pub struct ExtractionReport {
     /// 未启用 / 空结果等说明，UI 原样展示。
     pub note: Option<String>,
     pub extracted: Vec<ExtractedClaim>,
+}
+
+// ---------------------------------------------------------------------------
+// Extraction Run（EXTRACTION-001：异步抽取后台任务）
+// ---------------------------------------------------------------------------
+
+/// 一条抽取运行的快照（前端轮询 / 事件后回看用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractionRunDto {
+    pub id: String,
+    pub document_id: String,
+    pub status: String,
+    pub stage: String,
+    pub total_chunks: i64,
+    pub processed_chunks: i64,
+    pub candidates_found: i64,
+    pub changes_found: i64,
+    /// 完成后的抽取结果（序列化的 [`ExtractionReport`]），未完成为 `null`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_json: Option<String>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

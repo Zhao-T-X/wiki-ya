@@ -38,6 +38,13 @@ sha2 = "0.10"
 # AI 抽取 / Ask 的 HTTP 客户端（OpenAI 兼容接口）。用 blocking + 系统 TLS，
 # 避免引入额外 TLS 栈；Tauri command 在线程池上跑，blocking 足够。
 reqwest = { version = "0.12", features = ["blocking", "json"] }
+# SEC-003：日志/错误里的密钥脱敏（纯文本匹配）。
+regex = "1"
+# SEC-001：API Key 加密存储。AES-256-GCM + 每次加密独立随机 nonce。
+# 纯 Rust 实现（RustCrypto），无 C 依赖，全平台一致。
+aes-gcm = "0.11"
+# 主密钥与 nonce 的加密安全随机数来源（走 OS CSPRNG）。
+getrandom = "0.2"
 
 [features]
 # 保留：后续 custom-protocol 打包模式可能用到

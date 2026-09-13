@@ -37,7 +37,7 @@ export function RouteErrorBoundary() {
           <button
             type="button"
             onClick={() => {
-              window.location.hash = '#/inbox';
+              window.location.hash = '#/home';
               window.location.reload();
             }}
             className="rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:text-accent"

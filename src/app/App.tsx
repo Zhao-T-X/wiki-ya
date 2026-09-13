@@ -9,7 +9,9 @@ import { useUiStore, type ModuleId } from '@/stores/ui';
 
 /** 路由首段 → 一级模块（/claims、/documents 归属 Knowledge）。 */
 const SEGMENT_TO_MODULE: Record<string, ModuleId> = {
-  inbox: 'inbox',
+  home: 'home',
+  // 兼容旧路径：/inbox 已重定向到 Home。
+  inbox: 'home',
   knowledge: 'knowledge',
   claims: 'knowledge',
   documents: 'knowledge',

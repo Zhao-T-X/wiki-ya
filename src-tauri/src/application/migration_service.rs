@@ -188,6 +188,7 @@ pub fn import(target: &mut Connection, source_path: &Path) -> AppResult<Migratio
             chunk_id: None,
             quote: None,
             status: None,
+            observed_at: None,
         };
         match knowledge_service::create_claim(target, input) {
             Ok(_) => report.claims_imported += 1,

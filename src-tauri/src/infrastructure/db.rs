@@ -10,7 +10,7 @@ use crate::domain::ontology::registry;
 use crate::error::{AppError, AppResult};
 
 /// 当前 schema 版本。新增迁移文件时 +1。
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// 0001 初始 Schema。
 ///
@@ -23,6 +23,24 @@ const MIGRATION_0002: &str = include_str!("../../migrations/0002_embeddings.sql"
 
 /// 0003 简单键值设置（AI 配置化）。
 const MIGRATION_0003: &str = include_str!("../../migrations/0003_settings.sql");
+
+/// 0004 Temporal 观察时间 + 演化事件日志（CORE-001 / CORE-005）。
+const MIGRATION_0004: &str = include_str!("../../migrations/0004_evolution_events.sql");
+
+/// 0005 Extraction Run（EXTRACTION-001：异步抽取后台任务）。
+const MIGRATION_0005: &str = include_str!("../../migrations/0005_extraction_runs.sql");
+
+/// 迁移清单 `(版本号, SQL)`：**必须按版本递增**。
+///
+/// DB-001：启动时只执行 `version > 当前版本` 的迁移，并逐条记录版本号，
+/// 因此后续新增非幂等语句（ALTER / 种子 INSERT）时不会每次启动都重跑。
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, MIGRATION_0001),
+    (2, MIGRATION_0002),
+    (3, MIGRATION_0003),
+    (4, MIGRATION_0004),
+    (5, MIGRATION_0005),
+];
 
 /// 打开连接并设置全部 PRAGMA。
 ///
@@ -39,37 +57,57 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     Ok(conn)
 }
 
-/// 建表并应用迁移（幂等，每次启动都执行）。
+/// 建表并应用迁移（每次启动都调用；内部按版本增量执行）。
 pub fn initialize(path: &Path) -> AppResult<()> {
     // 先自检注册表：如果词表与代码不一致，产出的知识会带着非法谓语落库，
     // 事后无法自动修复。宁可此时启动失败。
     registry::self_check()?;
 
     let mut conn = open(path)?;
-    let transaction = conn.transaction()?;
-    transaction.execute_batch(MIGRATION_0001)?;
-    transaction.execute_batch(MIGRATION_0002)?;
-    transaction.execute_batch(MIGRATION_0003)?;
-    transaction.execute(
-        "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?1)",
-        [SCHEMA_VERSION],
-    )?;
-    transaction.commit()?;
+    apply_migrations(&mut conn)?;
     Ok(())
 }
 
-/// 当前实际应用的 schema 版本。
+/// 按版本增量应用迁移（DB-001）。
+///
+/// 只执行 `version > current` 的迁移；每执行一条**立即**在同一事务内记录该
+/// 版本号，保证「SQL 执行成功」与「版本已记录」二者一致（要么都成功，要么
+/// 整体回滚）。返回应用后的最高版本。
+pub fn apply_migrations(conn: &mut Connection) -> AppResult<i64> {
+    let current = schema_version(conn)?;
+    let tx = conn.transaction()?;
+    let mut applied = current;
+    for (version, sql) in MIGRATIONS {
+        if *version > current {
+            tx.execute_batch(sql)?;
+            tx.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?1)",
+                [version],
+            )?;
+            applied = *version;
+        }
+    }
+    tx.commit()?;
+    Ok(applied)
+}
+
+/// 当前实际应用的 schema 版本；尚未初始化时为 0。
 pub fn schema_version(conn: &Connection) -> AppResult<i64> {
-    let version: Option<i64> = conn
-        .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
-            row.get(0)
-        })
-        .or_else(|err| match err {
-            // 空表时 MAX 返回 NULL，get::<i64> 会失败——这在语义上是"没有版本"。
-            rusqlite::Error::InvalidColumnType(..) => Ok(None),
-            other => Err(other),
-        })?;
-    Ok(version.unwrap_or(0))
+    let result: rusqlite::Result<Option<i64>> =
+        conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get::<_, Option<i64>>(0)
+        });
+    match result {
+        // 空表时 MAX 返回 NULL → None → 0（语义上「没有版本」）。
+        Ok(version) => Ok(version.unwrap_or(0)),
+        // 迁移表本身还不存在 = 尚未应用任何迁移。
+        Err(rusqlite::Error::SqliteFailure(_, Some(message)))
+            if message.contains("no such table") =>
+        {
+            Ok(0)
+        }
+        Err(other) => Err(other.into()),
+    }
 }
 
 /// 数据库侧的当前时间（UTC，`YYYY-MM-DD HH:MM:SS`）。
@@ -165,15 +203,13 @@ pub(crate) mod tests {
     /// 注意 `include_str!` 的 SQL 在内存库上同样有效：FTS5 虚拟表与触发器
     /// 都不依赖文件系统。
     pub fn memory_db() -> Connection {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA journal_mode = MEMORY;",
         )
         .expect("pragmas");
-        conn.execute_batch(MIGRATION_0001).expect("apply migration 0001");
-        conn.execute_batch(MIGRATION_0002).expect("apply migration 0002");
-        conn.execute_batch(MIGRATION_0003).expect("apply migration 0003");
+        apply_migrations(&mut conn).expect("apply migrations");
         conn
     }
 
@@ -193,6 +229,81 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn fresh_db_reports_version_zero_before_migration() {
+        let conn = Connection::open_in_memory().unwrap();
+        assert_eq!(schema_version(&conn).unwrap(), 0);
+    }
+
+    /// DB-001：文件库上完整初始化 → 每个版本都被记录；重复启动幂等。
+    #[test]
+    fn initialization_records_every_version_and_is_idempotent() {
+        let path = temp_db_path();
+        initialize(&path).unwrap();
+        {
+            let conn = open(&path).unwrap();
+            assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+            for version in 1..=SCHEMA_VERSION {
+                let count: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM schema_migrations WHERE version = ?1",
+                        [version],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(count, 1, "版本 {version} 必须且只记录一次");
+            }
+        }
+        // 二次启动：不应重复执行，版本不变。
+        initialize(&path).unwrap();
+        {
+            let conn = open(&path).unwrap();
+            assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+        }
+        cleanup_db_files(&path);
+    }
+
+    /// DB-001：v1 旧库升级到最新，只补执行缺失的迁移。
+    #[test]
+    fn partial_upgrade_only_applies_newer_migrations() {
+        let path = temp_db_path();
+        {
+            let conn = open(&path).unwrap();
+            conn.execute_batch(MIGRATION_0001).unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)",
+                [],
+            )
+            .unwrap();
+            assert_eq!(schema_version(&conn).unwrap(), 1);
+        }
+        {
+            let mut conn = open(&path).unwrap();
+            let applied = apply_migrations(&mut conn).unwrap();
+            assert_eq!(applied, SCHEMA_VERSION);
+            assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+            // 再跑一次：没有更高版本可应用，返回值即当前版本。
+            assert_eq!(apply_migrations(&mut conn).unwrap(), SCHEMA_VERSION);
+        }
+        cleanup_db_files(&path);
+    }
+
+    fn temp_db_path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("wikiya-mig-{}.db", uuid::Uuid::new_v4()))
+    }
+
+    fn cleanup_db_files(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(path.with_file_name(format!(
+            "{}-wal",
+            path.file_name().unwrap().to_string_lossy()
+        )));
+        let _ = std::fs::remove_file(path.with_file_name(format!(
+            "{}-shm",
+            path.file_name().unwrap().to_string_lossy()
+        )));
     }
 
     #[test]

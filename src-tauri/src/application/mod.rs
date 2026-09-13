@@ -12,6 +12,7 @@ pub mod ask_service;
 pub mod capture_service;
 pub mod dto;
 pub mod evolution_service;
+pub mod extraction_service;
 pub mod knowledge_service;
 pub mod migration_service;
 pub mod research_service;

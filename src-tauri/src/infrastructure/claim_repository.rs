@@ -89,7 +89,8 @@ SELECT
   pe.document_id AS source_document_id,
   d.title AS source_document_title,
   pe.quote AS source_quote,
-  (SELECT COUNT(*) FROM evidence e2 WHERE e2.claim_id = c.id) AS evidence_count
+  (SELECT COUNT(*) FROM evidence e2 WHERE e2.claim_id = c.id) AS evidence_count,
+  c.observed_at
 FROM claims c
 JOIN entities s ON s.id = c.subject_id
 LEFT JOIN entities o ON o.id = c.object_id
@@ -121,6 +122,7 @@ fn map_claim(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClaimRow> {
         status: parse_col::<ClaimStatus>(row, 12)?,
         valid_from: row.get(13)?,
         valid_until: row.get(14)?,
+        observed_at: row.get(23)?,
         recorded_at: row.get(15)?,
         created_at: row.get(16)?,
     };
@@ -153,8 +155,8 @@ pub fn insert(conn: &Connection, claim: &Claim) -> AppResult<()> {
         "INSERT INTO claims(
             id, subject_id, predicate, object_id, object_text, content, context_json,
             claim_type, polarity, modality, condition, confidence, status,
-            valid_from, valid_until
-         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+            valid_from, valid_until, observed_at
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
         params![
             claim.id.as_str(),
             claim.subject_id.as_str(),
@@ -171,6 +173,7 @@ pub fn insert(conn: &Connection, claim: &Claim) -> AppResult<()> {
             claim.status.as_str(),
             claim.valid_from,
             claim.valid_until,
+            claim.observed_at,
         ],
     )?;
     Ok(())
@@ -378,6 +381,7 @@ mod tests {
             status: ClaimStatus::Candidate,
             valid_from: None,
             valid_until: None,
+            observed_at: None,
             recorded_at: String::new(),
             created_at: String::new(),
         };
@@ -516,6 +520,7 @@ mod tests {
             status: ClaimStatus::Candidate,
             valid_from: None,
             valid_until: None,
+            observed_at: None,
             recorded_at: String::new(),
             created_at: String::new(),
         };
@@ -587,6 +592,7 @@ mod tests {
             status: ClaimStatus::Candidate,
             valid_from: None,
             valid_until: None,
+            observed_at: None,
             recorded_at: String::new(),
             created_at: String::new(),
         };

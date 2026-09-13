@@ -58,8 +58,8 @@ export function DocumentDetailPage() {
       <PageHeader
         title={data ? data.document.title : '文档详情'}
         subtitle={
-          <Link to="/inbox" className="text-accent hover:underline">
-            返回 Inbox
+          <Link to="/home" className="text-accent hover:underline">
+            返回 Home
           </Link>
         }
         actions={

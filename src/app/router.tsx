@@ -4,7 +4,7 @@ import { App } from '@/app/App';
 import { RouteErrorBoundary } from '@/app/RouteErrorBoundary';
 import { AskPage } from '@/features/ask/AskPage';
 import { GraphPage } from '@/features/graph/GraphPage';
-import { InboxPage } from '@/features/inbox/InboxPage';
+import { HomePage } from '@/features/home/HomePage';
 import { ClaimDetailPage } from '@/features/knowledge/ClaimDetailPage';
 import { DocumentDetailPage } from '@/features/knowledge/DocumentDetailPage';
 import { KnowledgePage } from '@/features/knowledge/KnowledgePage';
@@ -25,8 +25,10 @@ export const router = createHashRouter([
     element: <App />,
     errorElement: <RouteErrorBoundary />,
     children: [
-      { index: true, element: <Navigate to="/inbox" replace /> },
-      { path: 'inbox', element: <InboxPage /> },
+      { index: true, element: <Navigate to="/home" replace /> },
+      { path: 'home', element: <HomePage /> },
+      // 兼容旧链接：/inbox 永久跳转到 Home。
+      { path: 'inbox', element: <Navigate to="/home" replace /> },
       { path: 'knowledge', element: <KnowledgePage /> },
       { path: 'knowledge/:entityId', element: <KnowledgePage /> },
       { path: 'claims/:claimId', element: <ClaimDetailPage /> },
@@ -39,7 +41,7 @@ export const router = createHashRouter([
       { path: 'timeline', element: <TimelinePage /> },
       { path: 'migration', element: <MigrationPage /> },
       { path: 'settings', element: <SettingsPage /> },
-      { path: '*', element: <Navigate to="/inbox" replace /> },
+      { path: '*', element: <Navigate to="/home" replace /> },
     ],
   },
 ]);

@@ -56,6 +56,17 @@ fn resolve_db_path(app: &tauri::AppHandle) -> AppResult<PathBuf> {
     Ok(dir.join("wikiya.db"))
 }
 
+/// API Key 主密钥文件路径：与数据库同目录（`<app_data_dir>/secret.key`）。
+///
+/// 注意：主密钥与数据库同目录，因此本方案能防「数据库被单独复制」，但**不能**
+/// 防能读取整个用户目录的本地攻击者——详见 `infrastructure::secrets` 的说明。
+fn key_file_path(db_path: &std::path::Path) -> PathBuf {
+    db_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join(infrastructure::secrets::KEY_FILE_NAME)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 日志先行初始化：后续所有模块都能按 WIKIYA_LOG 输出。
@@ -65,8 +76,41 @@ pub fn run() {
         .setup(|app| {
             let db_path = resolve_db_path(app.handle())?;
 
-            // 建表 + 应用迁移（幂等，每次启动都跑）。
+            // 建表 + 应用迁移（按版本增量，幂等）。
             infrastructure::db::initialize(&db_path)?;
+
+            // EXTRACTION-001：把"上次还在跑"的抽取 Run 标记为 interrupted，
+            // 不假装还在运行（用户重开应用后能看到诚实的终态）。
+            {
+                let conn = infrastructure::db::open(&db_path)?;
+                let recovered = crate::application::extraction_service::recover_interrupted_runs(&conn)?;
+                if recovered > 0 {
+                    crate::log_warn!(
+                        "启动时将 {} 条未完成的抽取 Run 标记为 interrupted",
+                        recovered
+                    );
+                }
+            }
+
+            // SEC-001：初始化 API Key 的加解密器（主密钥文件首次运行自动生成，权限 0600）。
+            // 失败不阻断启动：AI 会如实显示为「未启用」，而不是让应用起不来。
+            {
+                let key_path = key_file_path(&db_path);
+                match infrastructure::secrets::SecretCipher::load_or_create(&key_path) {
+                    Ok(cipher) => infrastructure::secrets::install_cipher(cipher),
+                    Err(err) => {
+                        crate::log_warn!("初始化 API Key 加密器失败，AI 将不可用：{err}");
+                    }
+                }
+            }
+
+            // SEC-002：把历史遗留的明文 API Key 加密迁移进 SQLite。
+            // 失败不阻断启动（`migrate_legacy_api_key` 内部只记警告、保留原值）。
+            {
+                let conn = infrastructure::db::open(&db_path)?;
+                let _ = infrastructure::secrets::migrate_legacy_api_key(&conn);
+            }
+
             app.manage(AppState { db_path });
 
             Ok(())
@@ -80,6 +124,11 @@ pub fn run() {
             commands::settings::update_settings,
             // ---- ai（Phase 5 抽取）----
             commands::ai::extract_claims,
+            // ---- extraction run（EXTRACTION-001：异步抽取后台任务）----
+            commands::extraction::start_extraction,
+            commands::extraction::get_extraction_run,
+            commands::extraction::list_extraction_runs,
+            commands::extraction::cancel_extraction,
             // ---- ask（Phase 6 问答）----
             commands::ask::ask,
             // ---- research（Phase 6 多步研究）----
