@@ -40,6 +40,19 @@ impl ToolName {
         }
     }
 
+    /// 执行该工具所需的最低权限（M5）。
+    ///
+    /// 全部工具 ≤ PROPOSE：**白名单里不存在 MUTATE 级工具**——
+    /// 「AI 不拥有写权限」由枚举结构性保证（有测试固化）。
+    pub fn required_policy(&self) -> Policy {
+        match self {
+            // 唯一的"写"路径：往 Review 队列放提案（AI suggests, user decides）。
+            ToolName::RequestReview => Policy::Propose,
+            // 其余全部只读。
+            _ => Policy::Read,
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             ToolName::SearchKnowledge => "search_knowledge",
@@ -73,6 +86,7 @@ use crate::domain::evolution::conflict::ClaimView;
 use crate::domain::evolution::engine as evolution_engine;
 use crate::domain::knowledge::claim::ClaimObject;
 use crate::domain::ontology::predicate::ClaimPredicate;
+use crate::domain::policy::Policy;
 use crate::domain::review::review::ReviewTarget;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::review_repository;
@@ -137,7 +151,22 @@ fn arg_usize(args: &Value, key: &str, default: usize) -> usize {
 /// 只读保证：全部委托 `application` 层用例，**永不直接执行 SQL**
 /// （TDD §50/§51，`execute_sql` 被白名单机制结构性排除）。
 /// 未接入执行的枚举项诚实拒绝，绝不假装成功。
-pub fn execute(conn: &Connection, name: ToolName, args: &Value) -> AppResult<ToolOutput> {
+pub fn execute(
+    conn: &Connection,
+    name: ToolName,
+    args: &Value,
+    policy: &Policy,
+) -> AppResult<ToolOutput> {
+    // 权限闸门（M5）：调用方权限不足即拒绝，错误原文会回填给模型。
+    let required = name.required_policy();
+    if !policy.at_least(&required) {
+        return Err(AppError::Internal(format!(
+            "权限不足：工具 `{}` 需要 {:?} 权限，当前 {:?}",
+            name.as_str(),
+            required,
+            policy
+        )));
+    }
     match name {
         ToolName::SearchKnowledge => search_knowledge(conn, args),
         ToolName::GetKnowledge => get_knowledge(conn, args),

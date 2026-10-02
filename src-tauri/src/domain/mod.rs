@@ -16,6 +16,7 @@ pub mod agent_profile;
 pub mod common;
 pub mod extraction;
 pub mod evidence;
+pub mod policy;
 pub mod run;
 pub mod skill;
 pub mod evolution;

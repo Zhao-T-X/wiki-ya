@@ -14,11 +14,13 @@
 //! 的子集才被执行；超限的 Skill 诚实标记 `skipped: policy`，绝不静默执行。
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use crate::domain::agent_profile::AgentProfile;
+use crate::domain::policy::Policy;
 use crate::domain::extraction::ExtractionRunStatus;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
@@ -175,12 +177,19 @@ fn run_agent_sync(
 
     let mut results = serde_json::Map::new();
     for skill in &profile.skills {
-        // 权限闸门雏形（M5 完善）：skill permissions ⊆ profile.policy。
+        // 权限闸门（M5）：Skill 需要的最高权限 ≤ Profile 的 policy 上限。
         let gate = skill_service::resolve(&conn, skill).map(|def| {
-            let allowed = def
+            let cap = Policy::highest_of(profile.policy.iter().map(String::as_str));
+            let required = def
                 .permissions
                 .iter()
-                .all(|p| profile.policy.contains(&p.as_str().to_string()));
+                .filter_map(|p| Policy::from_str(p.as_str()).ok())
+                .max_by_key(|p| p.rank_of());
+            let allowed = match (cap, required) {
+                (Some(cap), Some(required)) => cap.at_least(&required),
+                (Some(_), None) => true,
+                _ => false,
+            };
             (def, allowed)
         });
         match gate {
@@ -286,5 +295,54 @@ mod tests {
         assert_eq!(run.status, ExtractionRunStatus::Completed);
         let metadata: Value = serde_json::from_str(&run.metadata).unwrap();
         assert_eq!(metadata["skills"]["knowledge-extraction"]["skipped"], json!("policy"));
+    }
+}
+
+#[cfg(test)]
+mod policy_gate_tests {
+    use super::*;
+    use crate::ai::agents::AgentRole;
+    use crate::ai::tools::ToolName;
+    use crate::domain::policy::Policy;
+
+    /// 结构性保证（行动计划纪律三）：工具白名单里不存在 MUTATE 级工具。
+    /// AI / Skill 的任何可达路径最高只能 PROPOSE——改知识永远经人类 Review。
+    #[test]
+    fn no_tool_requires_mutate() {
+        let all = [
+            ToolName::SearchKnowledge,
+            ToolName::GetKnowledge,
+            ToolName::GetEntities,
+            ToolName::GetEntity,
+            ToolName::GetClaim,
+            ToolName::FindRelated,
+            ToolName::GetEvidence,
+            ToolName::CompareClaims,
+            ToolName::DetectConflict,
+            ToolName::ProposeEvolution,
+            ToolName::RequestReview,
+            ToolName::Research,
+        ];
+        assert!(all
+            .iter()
+            .all(|t| !t.required_policy().at_least(&Policy::Mutate)));
+        // 唯一的"写"路径是往 Review 队列放提案（PROPOSE 级）。
+        assert_eq!(ToolName::RequestReview.required_policy(), Policy::Propose);
+    }
+
+    /// 角色权限上限：没有任何 Agent 角色能拿到 MUTATE。
+    #[test]
+    fn no_role_gets_mutate() {
+        for role in [
+            AgentRole::Auto,
+            AgentRole::Personal,
+            AgentRole::Knowledge,
+            AgentRole::Research,
+            AgentRole::Curator,
+            AgentRole::Review,
+            AgentRole::Extraction,
+        ] {
+            assert!(!role.policy().at_least(&Policy::Mutate));
+        }
     }
 }

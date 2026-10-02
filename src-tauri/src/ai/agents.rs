@@ -4,6 +4,8 @@
 //! `runtime` / `tools` 中（TDD §49-§51）。Ask 当前直接走 `KnowledgeAgent`
 //! 的提示词 + 白名单工具的结果，不做完整 ReAct 循环（后续增强）。
 
+use crate::domain::policy::Policy;
+
 /// Agent 角色（TDD §52）。用户默认 `auto`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentRole {
@@ -38,6 +40,21 @@ impl AgentRole {
             AgentRole::Curator => CURATOR_PROMPT,
             AgentRole::Review => REVIEW_PROMPT,
             AgentRole::Extraction => EXTRACTION_PROMPT,
+        }
+    }
+
+    /// 该角色的权限上限（M5）。
+    ///
+    /// 全部角色 ≤ PROPOSE：整理 / 抽取类角色可以往 Review 队列放提案，
+    /// 但没有任何角色能 MUTATE——改知识永远经人类 Review 决策。
+    pub fn policy(&self) -> Policy {
+        match self {
+            AgentRole::Knowledge
+            | AgentRole::Auto
+            | AgentRole::Personal
+            | AgentRole::Research => Policy::Read,
+            // 整理 / 审核 / 抽取类角色需要往 Review 队列放提案。
+            AgentRole::Curator | AgentRole::Review | AgentRole::Extraction => Policy::Propose,
         }
     }
 }

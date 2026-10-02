@@ -162,7 +162,7 @@ fn run_inner(
                 let name = ToolName::from_str(&tool).ok_or_else(|| {
                     AppError::Internal(format!("模型请求了白名单之外的工具 `{tool}`"))
                 })?;
-                let output = tools::execute(conn, name, &args)
+                let output = tools::execute(conn, name, &args, &role.policy())
                     .and_then(|out: ToolOutput| Ok(json!(out.render())))
                     .unwrap_or_else(|err| json!({ "error": err.to_string() }));
 
