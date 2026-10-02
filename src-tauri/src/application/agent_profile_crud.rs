@@ -11,9 +11,7 @@
 
 use rusqlite::Connection;
 
-use crate::application::agent_profile_service::{
-    ensure_default_profiles, get_profile, list_profiles,
-};
+use crate::application::agent_profile_service::{ensure_default_profiles, list_profiles};
 use crate::domain::agent_profile::AgentProfile;
 use crate::domain::policy::Policy;
 use crate::error::{AppError, AppResult};
