@@ -9,7 +9,8 @@
 use rusqlite::Connection;
 use serde::Deserialize;
 
-use crate::ai::provider::{default_provider, CompletionRequest};
+use crate::ai::config::AiConfig;
+use crate::ai::rig_adapter::RigAdapter;
 use crate::application::dto::{ExtractedClaim, ExtractionReport};
 use crate::domain::common::ids::DocumentId;
 use crate::domain::knowledge::chunk::Chunk;
@@ -25,11 +26,11 @@ pub fn extract_claims(conn: &Connection, document_id: &str) -> AppResult<Extract
         .ok_or_else(|| AppError::NotFound(format!("文档 {document_id} 不存在")))?;
     let chunks = document_repository::list_chunks(conn, &doc_id)?;
 
-    let provider = default_provider(conn);
-    if !provider.enabled() {
+    let config = AiConfig::from_settings(conn);
+    if !config.enabled {
         return Ok(ExtractionReport {
             document_id: document_id.to_string(),
-            provider: provider.name().to_string(),
+            provider: config.model.clone(),
             enabled: false,
             note: Some(
                 "AI 未启用：未配置 WIKIYA_API_KEY（可选 WIKIYA_BASE_URL / WIKIYA_MODEL）。\
@@ -56,7 +57,7 @@ pub fn extract_claims(conn: &Connection, document_id: &str) -> AppResult<Extract
 
     Ok(ExtractionReport {
         document_id: document_id.to_string(),
-        provider: provider.name().to_string(),
+        provider: config.model.clone(),
         enabled: true,
         note: None,
         extracted,
@@ -100,16 +101,22 @@ pub fn extract_corpus(
     system: String,
     user: String,
 ) -> AppResult<Vec<ExtractedClaim>> {
-    let request = CompletionRequest::structured(system, user);
     crate::log_info!("抽取：发起一次模型补全");
-    let response = default_provider(conn).complete(&request)?;
+    // M14 PR5：抽取的模型调用走 RigAdapter（含流式专用端点兜底——
+    // DeepSeek 推理端点不再每次浪费 4×30s 的非流式空体等待）。
+    let adapter = RigAdapter::new(AiConfig::from_settings(conn));
+    let response = adapter.run_blocking(crate::ai::rig_adapter::AgentRequest {
+        goal: user,
+        system,
+        run_id: String::new(),
+    })?;
 
     // 宽松解析：容忍模型偶尔加上的 Markdown 围栏或前后解释文字，
     // 同时兼容「对象包裹 {\"claims\":[...]}」与「裸数组 [...]」两种返回形态。
-    let raw: Vec<RawClaim> = parse_claims(&response.text).map_err(|err| {
+    let raw: Vec<RawClaim> = parse_claims(&response.answer).map_err(|err| {
         crate::log_error!(
             "模型返回内容无法解析为 Claim JSON：{err}；原文（前 800 字符）：{}",
-            crate::logging::clip(&response.text, 800)
+            crate::logging::clip(&response.answer, 800)
         );
         AppError::Internal(format!("AI 返回的 JSON 解析失败：{err}"))
     })?;
