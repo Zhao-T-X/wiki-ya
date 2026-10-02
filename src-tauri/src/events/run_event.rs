@@ -13,7 +13,7 @@ use crate::domain::run::RunType;
 
 /// 一次 Run 生命周期中的统一事件。
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum RunEvent {
     /// Run 开始执行（queued → running）。
     Started {
@@ -31,6 +31,11 @@ pub enum RunEvent {
         processed: usize,
         total: usize,
     },
+    /// 流式文本增量（Ask 回答 / Research Findings 的打字机效果）。
+    TokenDelta {
+        run_id: String,
+        delta: String,
+    },
     /// 一次工具调用开始。
     ToolCalled {
         run_id: String,
@@ -42,6 +47,7 @@ pub enum RunEvent {
         run_id: String,
         tool: String,
         ok: bool,
+        summary: String,
     },
     /// 产出了候选知识（抽取/Skill 产物）。
     CandidateCreated {

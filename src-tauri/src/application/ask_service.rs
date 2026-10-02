@@ -18,7 +18,7 @@ use crate::application::dto::{AskRequest, AskResponse, AskSource};
 use crate::application::retrieval_service::retrieve;
 use crate::domain::ontology::registry;
 use crate::error::AppResult;
-use crate::events::{AppEvent, EventSink};
+use crate::events::{AppEvent, EventSink, RunEvent, RunSink};
 use crate::infrastructure::{db, telemetry_repository};
 
 /// 进入编排前的检索候选上限。
@@ -28,6 +28,7 @@ pub fn ask(
     conn: &Connection,
     request: AskRequest,
     sink: Option<&EventSink>,
+    run_sink: Option<&RunSink>,
 ) -> AppResult<AskResponse> {
     let config = AiConfig::from_settings(conn);
     let provider = default_provider(conn);
@@ -47,6 +48,12 @@ pub fn ask(
     let notify = |event: AppEvent| {
         if let Some(sink) = sink {
             sink(&event);
+        }
+    };
+    // 统一 Run 事件镜像（M1）：Ask 的可见过程只有流式增量。
+    let notify_run = |event: RunEvent| {
+        if let Some(run_sink) = run_sink {
+            run_sink(&event);
         }
     };
 
@@ -172,6 +179,10 @@ pub fn ask(
         let stream_run_id = run_id.clone();
         provider.complete_streaming(&completion, &|delta| {
             notify(AppEvent::TokenDelta {
+                run_id: stream_run_id.clone(),
+                delta: delta.to_string(),
+            });
+            notify_run(RunEvent::TokenDelta {
                 run_id: stream_run_id.clone(),
                 delta: delta.to_string(),
             });

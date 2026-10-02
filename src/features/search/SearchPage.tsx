@@ -15,7 +15,7 @@ import { formatScore, formatTookMs, newRunId } from '@/lib/format';
 import { useAsyncData } from '@/lib/hooks';
 import { hitTarget } from '@/lib/links';
 import { searchKindLabel } from '@/lib/status';
-import { useAgentEvents } from '@/lib/useAgentEvents';
+import { useRunEvents } from '@/lib/useRunEvents';
 import type { AskResponse, AskSource, SearchHit, SearchKind, SearchResponse } from '@/types/ipc';
 
 const ALL_KINDS: SearchKind[] = ['document', 'chunk', 'claim', 'entity'];
@@ -62,8 +62,8 @@ export function SearchPage() {
   const [runId, setRunId] = useState<string | null>(null);
   const [streamingAnswer, setStreamingAnswer] = useState('');
 
-  useAgentEvents(runId, (event) => {
-    if (event.type === 'token_delta') {
+  useRunEvents(runId, (event) => {
+    if (event.kind === 'tokenDelta') {
       setStreamingAnswer((prev) => prev + event.delta);
     }
   });

@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/PageHeader';
 import { app_info, list_research_tasks, start_research, WikiError } from '@/lib/api';
 import { newRunId } from '@/lib/format';
-import { useAgentEvents } from '@/lib/useAgentEvents';
+import { useRunEvents } from '@/lib/useRunEvents';
 import { useAsyncData } from '@/lib/hooks';
 import type { ResearchReport, ResearchTaskCard } from '@/types/ipc';
 
@@ -47,15 +47,15 @@ export function ResearchPage() {
   const [liveSteps, setLiveSteps] = useState<LiveStep[]>([]);
   const [findingsPreview, setFindingsPreview] = useState('');
 
-  useAgentEvents(runId, (event) => {
-    switch (event.type) {
-      case 'tool_completed':
+  useRunEvents(runId, (event) => {
+    switch (event.kind) {
+      case 'toolCompleted':
         setLiveSteps((steps) => [
           ...steps,
           { tool: event.tool, ok: event.ok, summary: event.summary },
         ]);
         break;
-      case 'token_delta':
+      case 'tokenDelta':
         setFindingsPreview((prev) => prev + event.delta);
         break;
       default:

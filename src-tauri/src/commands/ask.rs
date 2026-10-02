@@ -18,5 +18,6 @@ pub fn ask(
 ) -> Result<AskResponse, AppError> {
     let conn = state.open()?;
     let sink = super::agent_sink(&app, input.run_id.is_some());
-    ask_service::ask(&conn, input, sink.as_ref())
+    let run_events = super::run_sink(&app);
+    ask_service::ask(&conn, input, sink.as_ref(), Some(&run_events))
 }

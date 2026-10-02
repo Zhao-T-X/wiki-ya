@@ -15,7 +15,7 @@ use crate::application::dto::{
 };
 use crate::domain::review::review::ReviewTarget;
 use crate::error::{AppError, AppResult};
-use crate::events::EventSink;
+use crate::events::{EventSink, RunSink};
 use crate::infrastructure::{research_repository, review_repository};
 
 /// 最近的研究任务历史（新→旧，Phase 6 收尾）。
@@ -40,6 +40,7 @@ pub fn start_research(
     conn: &Connection,
     input: StartResearchInput,
     sink: Option<&EventSink>,
+    run_sink: Option<&RunSink>,
 ) -> AppResult<ResearchReport> {
     let question = input.question.trim().to_string();
     if question.is_empty() {
@@ -71,7 +72,7 @@ pub fn start_research(
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    match runtime::run(conn, AgentRole::Research, &question, &run_id, sink) {
+    match runtime::run(conn, AgentRole::Research, &question, &run_id, sink, run_sink) {
         Ok(run) => {
             let steps_value = serde_json::to_value(&run.steps)
                 .unwrap_or_else(|_| json!([]));

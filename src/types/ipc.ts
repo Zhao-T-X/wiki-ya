@@ -464,8 +464,9 @@ export type RunEvent =
   | { kind: 'started'; runId: string; runType: string }
   | { kind: 'stageChanged'; runId: string; stage: string }
   | { kind: 'progress'; runId: string; processed: number; total: number }
+  | { kind: 'tokenDelta'; runId: string; delta: string }
   | { kind: 'toolCalled'; runId: string; tool: string; summary: string }
-  | { kind: 'toolCompleted'; runId: string; tool: string; ok: boolean }
+  | { kind: 'toolCompleted'; runId: string; tool: string; ok: boolean; summary: string }
   | { kind: 'candidateCreated'; runId: string; count: number }
   | { kind: 'proposalCreated'; runId: string; count: number }
   | { kind: 'completed'; runId: string }

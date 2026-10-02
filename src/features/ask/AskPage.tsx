@@ -11,7 +11,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/PageHeader';
 import { app_info, ask, WikiError } from '@/lib/api';
 import { newRunId } from '@/lib/format';
-import { useAgentEvents } from '@/lib/useAgentEvents';
+import { useRunEvents } from '@/lib/useRunEvents';
 import { useAsyncData } from '@/lib/hooks';
 import type { AskResponse, AskSource } from '@/types/ipc';
 
@@ -44,8 +44,8 @@ export function AskPage() {
   const [runId, setRunId] = useState<string | null>(null);
   const [streamingAnswer, setStreamingAnswer] = useState('');
 
-  useAgentEvents(runId, (event) => {
-    if (event.type === 'token_delta') {
+  useRunEvents(runId, (event) => {
+    if (event.kind === 'tokenDelta') {
       setStreamingAnswer((prev) => prev + event.delta);
     }
   });

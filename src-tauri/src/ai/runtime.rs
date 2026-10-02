@@ -18,7 +18,7 @@ use crate::ai::config::AiConfig;
 use crate::ai::provider::{default_provider, CompletionRequest};
 use crate::ai::tools::{self, ToolOutput, ToolName};
 use crate::error::{AppError, AppResult};
-use crate::events::{AppEvent, EventSink};
+use crate::events::{AppEvent, EventSink, RunEvent, RunSink};
 use crate::infrastructure::telemetry_repository;
 
 /// 循环轮数上限：防止工具调用无限循环烧 token。
@@ -57,6 +57,7 @@ pub fn run(
     goal: &str,
     run_id: &str,
     sink: Option<&EventSink>,
+    run_sink: Option<&RunSink>,
 ) -> AppResult<AgentRun> {
     // Run Trace（TDD §79）：agent_runs/agent_events 落库，可回放、可审计。
     let config = AiConfig::from_settings(conn);
@@ -68,7 +69,7 @@ pub fn run(
     )?;
     let started = std::time::Instant::now();
 
-    match run_inner(conn, role, goal, run_id, sink, &agent_run_id) {
+    match run_inner(conn, role, goal, run_id, sink, run_sink, &agent_run_id) {
         Ok(run) => {
             let _ = telemetry_repository::finish_agent_run(
                 conn,
@@ -103,6 +104,7 @@ fn run_inner(
     goal: &str,
     run_id: &str,
     sink: Option<&EventSink>,
+    run_sink: Option<&RunSink>,
     agent_run_id: &str,
 ) -> AppResult<AgentRun> {
     let provider = default_provider(conn);
@@ -115,9 +117,19 @@ fn run_inner(
             sink(&event);
         }
     };
+    // 统一 Run 事件镜像（M1）：单一频道，过渡期与 AppEvent 并存。
+    let notify_run = |event: RunEvent| {
+        if let Some(run_sink) = run_sink {
+            run_sink(&event);
+        }
+    };
     notify(AppEvent::AgentStarted {
         run_id: run_id.to_string(),
         agent: format!("{role:?}"),
+    });
+    notify_run(RunEvent::Started {
+        run_id: run_id.to_string(),
+        run_type: crate::domain::run::RunType::Agent,
     });
 
     let system = format!("{}\n\n{}", role.system_prompt(), tools_manual());
@@ -143,6 +155,10 @@ fn run_inner(
                 run_id: stream_run_id.clone(),
                 delta: delta.to_string(),
             });
+            notify_run(RunEvent::TokenDelta {
+                run_id: stream_run_id.clone(),
+                delta: delta.to_string(),
+            });
         })?;
         let action = parse_action(&response.text)?;
 
@@ -151,6 +167,9 @@ fn run_inner(
                 notify(AppEvent::AgentFinished {
                     run_id: run_id.to_string(),
                     status: "success".into(),
+                });
+                notify_run(RunEvent::Completed {
+                    run_id: run_id.to_string(),
                 });
                 return Ok(AgentRun {
                     answer,
@@ -163,6 +182,11 @@ fn run_inner(
                     run_id: run_id.to_string(),
                     tool: tool.clone(),
                     arguments: args.clone(),
+                });
+                notify_run(RunEvent::ToolCalled {
+                    run_id: run_id.to_string(),
+                    tool: tool.clone(),
+                    summary: clip_text(&args.to_string(), 200),
                 });
                 let name = ToolName::from_str(&tool).ok_or_else(|| {
                     AppError::Internal(format!("模型请求了白名单之外的工具 `{tool}`"))
@@ -194,6 +218,12 @@ fn run_inner(
                     ok,
                     summary: summary.clone(),
                 });
+                notify_run(RunEvent::ToolCompleted {
+                    run_id: run_id.to_string(),
+                    tool: tool.clone(),
+                    ok,
+                    summary: summary.clone(),
+                });
                 user.push_str(&format!(
                     "\n\n[第 {round} 轮：工具 `{tool}` 输出]\n{summary}\n\n\
                      请继续：要么调用下一个工具，要么给出 final 答案。"
@@ -205,6 +235,10 @@ fn run_inner(
     notify(AppEvent::AgentFinished {
         run_id: run_id.to_string(),
         status: "failed".into(),
+    });
+    notify_run(RunEvent::Failed {
+        run_id: run_id.to_string(),
+        error: format!("Agent 在 {MAX_ROUNDS} 轮内未给出最终答案"),
     });
     Err(AppError::Internal(format!(
         "Agent 在 {MAX_ROUNDS} 轮内未给出最终答案"
