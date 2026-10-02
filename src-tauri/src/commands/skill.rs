@@ -11,8 +11,9 @@ use crate::AppState;
 
 /// 枚举内置 Skill（名称 / 描述 / 权限 / 输入约定）。
 #[tauri::command]
-pub fn list_skills() -> Vec<SkillDescriptorDto> {
-    skill_service::list_skills()
+pub fn list_skills(state: State<'_, AppState>) -> Result<Vec<SkillDescriptorDto>, AppError> {
+    let conn = state.open()?;
+    skill_service::list_skills(&conn)
 }
 
 /// 启动一次 Skill Run：立即返回 `run_id`，执行在后台完成，

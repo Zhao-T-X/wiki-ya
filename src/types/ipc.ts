@@ -467,7 +467,9 @@ export interface AgentEventDto {
 /** 内置 Skill 描述（M2）。 */
 export interface SkillDescriptorDto {
   name: string;
+  version: number;
   description: string;
+  instructions: string;
   permissions: string[];
   inputHint: string;
 }

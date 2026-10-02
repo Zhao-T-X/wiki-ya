@@ -766,7 +766,9 @@ pub struct RunTraceDto {
 #[serde(rename_all = "camelCase")]
 pub struct SkillDescriptorDto {
     pub name: String,
+    pub version: i64,
     pub description: String,
+    pub instructions: String,
     pub permissions: Vec<String>,
     pub input_hint: String,
 }

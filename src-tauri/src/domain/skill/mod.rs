@@ -49,6 +49,30 @@ impl SkillDescriptor {
     }
 }
 
+/// 从 `skill_versions` 解析出的完整 Skill 定义（版本化）。
+#[derive(Debug, Clone)]
+pub struct SkillDefinition {
+    pub name: SkillName,
+    pub version: i64,
+    pub description: String,
+    pub instructions: String,
+    pub input_hint: String,
+    pub output_hint: String,
+    pub tools: Vec<String>,
+    pub permissions: Vec<SkillPermission>,
+}
+
+impl SkillDefinition {
+    /// `knowledge-extraction@1` 形式的稳定标识，写进 Run 的 actor。
+    pub fn qualified_name(&self) -> String {
+        format!("{}@{}", self.name.as_str(), self.version)
+    }
+
+    pub fn has_permission(&self, permission: SkillPermission) -> bool {
+        self.permissions.contains(&permission)
+    }
+}
+
 /// 内置 Skill 注册表（M11 之前是静态的；之后迁移为可自定义）。
 pub fn registry() -> Vec<SkillDescriptor> {
     vec![

@@ -90,6 +90,12 @@ pub fn run() {
                         recovered
                     );
                 }
+
+                // M3：内置 SKILL.md 幂等 seed 进 skills / skill_versions。
+                let seeded = crate::application::skill_service::ensure_builtin_skills(&conn)?;
+                if seeded > 0 {
+                    crate::log_info!("启动时同步了 {} 个内置 Skill", seeded);
+                }
             }
 
             // SEC-001：初始化 API Key 的加解密器（主密钥文件首次运行自动生成，权限 0600）。
