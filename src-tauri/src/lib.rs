@@ -144,6 +144,9 @@ pub fn run() {
             // ---- skill runtime（M2）----
             commands::skill::list_skills,
             commands::skill::run_skill,
+            commands::skill::create_skill,
+            commands::skill::update_skill,
+            commands::skill::delete_skill,
             // ---- candidates（M6）----
             commands::candidate::list_candidates,
             commands::candidate::decide_candidate,

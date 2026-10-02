@@ -19,6 +19,7 @@ use std::str::FromStr;
 
 use serde_json::{json, Value};
 
+use crate::ai::provider::{default_provider, CompletionRequest};
 use crate::application::ai_service;
 use crate::application::ask_service;
 use crate::application::dto::{AskRequest, SkillDescriptorDto};
@@ -26,10 +27,10 @@ use crate::application::evolution_service;
 use crate::domain::extraction::ExtractionRunStatus;
 use crate::domain::run::RunType;
 use crate::domain::common::ids::DocumentId;
-use crate::domain::skill::{registry, SkillDefinition, SkillName};
+use crate::domain::skill::{SkillDefinition, SkillName};
 use crate::error::{AppError, AppResult};
 use crate::events::{RunEvent, RunSink};
-use crate::infrastructure::{db, run_repository};
+use crate::infrastructure::{db, document_repository, run_repository};
 
 /// 枚举内置 Skill（前端 Agent/Skill 面板用）。
 pub fn list_skills(conn: &Connection) -> AppResult<Vec<SkillDescriptorDto>> {
@@ -88,8 +89,7 @@ pub fn resolve(conn: &Connection, name: &str) -> AppResult<SkillDefinition> {
 
     let (description, version, instructions, input_hint, output_hint, tools, permissions) = row;
     Ok(SkillDefinition {
-        name: SkillName::from_str(name)
-            .map_err(|_| AppError::Domain(format!("未知 Skill `{name}`")))?,
+        name: name.to_string(),
         version,
         description,
         instructions,
@@ -114,9 +114,10 @@ pub fn ensure_builtin_skills(conn: &Connection) -> AppResult<usize> {
             serde_json::to_string(&parsed.permissions).unwrap_or_else(|_| "[]".into());
         let tools = serde_json::to_string(&parsed.tools).unwrap_or_else(|_| "[]".into());
         conn.execute(
-            "INSERT INTO skills(name, description, current_version) VALUES (?1, ?2, ?3) \
+            "INSERT INTO skills(name, description, current_version, is_builtin) \
+             VALUES (?1, ?2, ?3, 1) \
              ON CONFLICT(name) DO UPDATE SET description = excluded.description, \
-             current_version = excluded.current_version",
+             current_version = excluded.current_version, is_builtin = 1",
             rusqlite::params![parsed.name, parsed.description, parsed.version],
         )?;
         conn.execute(
@@ -144,8 +145,8 @@ fn register_skill_run(
     input: &Value,
     parent_run_id: Option<&str>,
 ) -> AppResult<String> {
-    SkillName::from_str(name)
-        .map_err(|_| AppError::Domain(format!("未知 Skill `{name}`")))?;
+    // 存在性校验：内置与自定义 Skill 一视同仁（M11）。
+    resolve(conn, name)?;
     // 版本化标识（M3）：Trace 可回答「这条知识当时是哪个版本的 Skill 产生的」。
     let definition = resolve(conn, name)?;
     let run_id = uuid::Uuid::new_v4().to_string();
@@ -267,10 +268,9 @@ fn execute_inner(
     input: Value,
     sink: &RunSink,
 ) -> AppResult<Value> {
-    let skill = SkillName::from_str(name)
-        .map_err(|_| AppError::Domain(format!("未知 Skill `{name}`")))?;
-
-    match skill {
+    // 内置 Skill：确定性服务包装（M2）。
+    if let Ok(skill) = SkillName::from_str(name) {
+        return match skill {
         SkillName::KnowledgeExtraction => {
             let document_id = input_string(&input, "documentId")?;
             let report = ai_service::extract_claims(conn, &document_id)?;
@@ -326,7 +326,54 @@ fn execute_inner(
                 })).collect::<Vec<_>>(),
             }))
         }
+        };
     }
+
+    // 自定义 Skill（M11）：通用 Prompt 执行——**强制只读**，产物只是回答，
+    // 不产生候选/提案，Ontology 与 Knowledge Policy 不可能被绕过。
+    generic_prompt_execute(conn, name, &input)
+}
+
+/// 自定义 Skill 的通用执行：instructions 作系统提示，输入文本作用户消息。
+fn generic_prompt_execute(
+    conn: &mut Connection,
+    name: &str,
+    input: &Value,
+) -> AppResult<Value> {
+    let definition = resolve(conn, name)?;
+    let provider = default_provider(conn);
+    if !provider.enabled() {
+        // 诚实降级：不伪造回答。
+        return Ok(json!({ "enabled": false, "answer": "" }));
+    }
+
+    // 输入：直接文本，或引用一篇文档的原文。
+    let text = match input
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
+        Some(text) => text,
+        None => {
+            let document_id = input
+                .get("documentId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    AppError::Domain("自定义 Skill 输入缺少 `text` 或 `documentId`".into())
+                })?;
+            let document = document_repository::find_by_id(
+                conn,
+                &DocumentId::from_raw(document_id),
+            )?
+            .ok_or_else(|| AppError::NotFound(format!("文档 {document_id} 不存在")))?;
+            document.content
+        }
+    };
+
+    let request = CompletionRequest::structured(definition.instructions.clone(), text);
+    let response = provider.complete(&request)?;
+    Ok(json!({ "enabled": true, "answer": response.text }))
 }
 
 fn input_string(input: &Value, key: &str) -> AppResult<String> {
@@ -427,7 +474,7 @@ struct ParsedSkillMd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::skill::SkillPermission;
+    use crate::domain::skill::{registry, SkillPermission};
 
     #[test]
     fn registry_declares_three_skills_with_read() {
@@ -575,4 +622,130 @@ mod tests {
 
         assert!(resolve(&conn, "no-such-skill").is_err());
     }
+
+    #[test]
+    fn custom_skill_crud_versioning_and_builtin_protection() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::apply_migrations(&mut conn).unwrap();
+
+        // 创建：v1，强制只读。
+        create_skill(&conn, "paper-extractor", "论文抽取", "抽取论文要点").unwrap();
+        let def = resolve(&conn, "paper-extractor").unwrap();
+        assert_eq!(def.version, 1);
+        assert!(!def.has_permission(SkillPermission::Propose));
+
+        // 内置名不可占用。
+        assert!(create_skill(&conn, "knowledge-extraction", "x", "y").is_err());
+        // 名称规则：大写/空格拒绝。
+        assert!(create_skill(&conn, "Bad Name", "x", "y").is_err());
+
+        // 更新 → 新版本；resolve 拿到 v2。
+        let v = update_skill(&conn, "paper-extractor", "论文抽取 v2", "新指令").unwrap();
+        assert_eq!(v, 2);
+        assert_eq!(resolve(&conn, "paper-extractor").unwrap().version, 2);
+
+        // 内置不可改 / 不可删。
+        assert!(update_skill(&conn, "knowledge-extraction", "x", "y").is_err());
+        assert!(delete_skill(&conn, "knowledge-extraction").is_err());
+
+        // 删除自定义。
+        delete_skill(&conn, "paper-extractor").unwrap();
+        assert!(resolve(&conn, "paper-extractor").is_err());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Skill 自定义（M11）
+// ---------------------------------------------------------------------------
+
+/// 创建自定义 Skill——**强制只读**（permissions 恒为 ["read"]）。
+///
+/// 域边界（M11）：用户可自定义「怎么处理文本」，但产不出候选/提案，
+/// Ontology 与 Knowledge Policy 不可能被绕过。
+pub fn create_skill(
+    conn: &Connection,
+    name: &str,
+    description: &str,
+    instructions: &str,
+) -> AppResult<()> {
+    crate::domain::skill::validate_custom_name(name).map_err(AppError::Domain)?;
+    if description.trim().is_empty() || instructions.trim().is_empty() {
+        return Err(AppError::Domain("description 与 instructions 不能为空".into()));
+    }
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM skills WHERE name = ?1)",
+            rusqlite::params![name],
+            |r| r.get(0),
+        )
+        .map_err(AppError::from)?;
+    if exists {
+        return Err(AppError::Domain(format!("Skill `{name}` 已存在")));
+    }
+    conn.execute(
+        "INSERT INTO skills(name, description, current_version, is_builtin) \
+         VALUES (?1, ?2, 1, 0)",
+        rusqlite::params![name, description.trim()],
+    )?;
+    conn.execute(
+        "INSERT INTO skill_versions(skill_name, version, instructions, permissions) \
+         VALUES (?1, 1, ?2, '[\"read\"]')",
+        rusqlite::params![name, instructions.trim()],
+    )?;
+    Ok(())
+}
+
+/// 更新自定义 Skill：**产生新版本**（version + 1）——版本化保证 Trace
+/// 可回答「当时用的是哪个版本」。内置 Skill 不可修改。
+pub fn update_skill(
+    conn: &Connection,
+    name: &str,
+    description: &str,
+    instructions: &str,
+) -> AppResult<i64> {
+    if crate::domain::skill::BUILTIN_NAMES.contains(&name) {
+        return Err(AppError::Domain("内置 Skill 不可修改".into()));
+    }
+    if description.trim().is_empty() || instructions.trim().is_empty() {
+        return Err(AppError::Domain("description 与 instructions 不能为空".into()));
+    }
+    let current: i64 = conn
+        .query_row(
+            "SELECT current_version FROM skills WHERE name = ?1 AND is_builtin = 0",
+            rusqlite::params![name],
+            |r| r.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("自定义 Skill `{name}` 不存在")))?;
+    let new_version = current + 1;
+    conn.execute(
+        "UPDATE skills SET description = ?2, current_version = ?3 WHERE name = ?1",
+        rusqlite::params![name, description.trim(), new_version],
+    )?;
+    conn.execute(
+        "INSERT INTO skill_versions(skill_name, version, instructions, permissions) \
+         VALUES (?1, ?2, ?3, '[\"read\"]')",
+        rusqlite::params![name, new_version, instructions.trim()],
+    )?;
+    Ok(new_version)
+}
+
+/// 删除自定义 Skill（内置不可删除；历史 Run 的 metadata 留痕不受影响）。
+pub fn delete_skill(conn: &Connection, name: &str) -> AppResult<()> {
+    if crate::domain::skill::BUILTIN_NAMES.contains(&name) {
+        return Err(AppError::Domain("内置 Skill 不可删除".into()));
+    }
+    // 先删子行（版本），再删主行——外键顺序不能反。
+    conn.execute(
+        "DELETE FROM skill_versions WHERE skill_name = ?1",
+        rusqlite::params![name],
+    )?;
+    let changed = conn.execute(
+        "DELETE FROM skills WHERE name = ?1 AND is_builtin = 0",
+        rusqlite::params![name],
+    )?;
+    if changed == 0 {
+        return Err(AppError::NotFound(format!("自定义 Skill `{name}` 不存在")));
+    }
+    Ok(())
 }

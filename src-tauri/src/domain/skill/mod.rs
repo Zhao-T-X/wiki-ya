@@ -50,9 +50,13 @@ impl SkillDescriptor {
 }
 
 /// 从 `skill_versions` 解析出的完整 Skill 定义（版本化）。
+///
+/// `name` 用 String 而非内置枚举：M11 起用户可自定义 Skill，
+/// 内置枚举只负责执行分派（三个确定性服务包装），自定义 Skill
+/// 走通用 Prompt 执行路径。
 #[derive(Debug, Clone)]
 pub struct SkillDefinition {
-    pub name: SkillName,
+    pub name: String,
     pub version: i64,
     pub description: String,
     pub instructions: String,
@@ -65,7 +69,7 @@ pub struct SkillDefinition {
 impl SkillDefinition {
     /// `knowledge-extraction@1` 形式的稳定标识，写进 Run 的 actor。
     pub fn qualified_name(&self) -> String {
-        format!("{}@{}", self.name.as_str(), self.version)
+        format!("{}@{}", self.name, self.version)
     }
 
     pub fn has_permission(&self, permission: SkillPermission) -> bool {
@@ -95,4 +99,33 @@ pub fn registry() -> Vec<SkillDescriptor> {
             input_hint: r#"{ "documentId": "<文档 id>" }"#,
         },
     ]
+}
+
+/// 内置 Skill 名（自定义不得占用；内置不可删除）。
+pub const BUILTIN_NAMES: &[&str] = &[
+    "knowledge-extraction",
+    "knowledge-answering",
+    "knowledge-correction",
+];
+
+/// 自定义 Skill 的名称规则（M11）：小写 slug，不与内置冲突。
+///
+/// 域规则（行动计划 M11）：用户可以自定义「怎么处理」，
+/// 但不能自定义「知识规则」——因此自定义 Skill 由
+/// `skill_service` 强制只读（permissions 恒为 read），不经过本函数。
+pub fn validate_custom_name(name: &str) -> Result<(), String> {
+    if BUILTIN_NAMES.contains(&name) {
+        return Err(format!("`{name}` 是内置 Skill，不可占用或删除"));
+    }
+    let ok = name.len() >= 2
+        && name.len() <= 40
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err("Skill 名必须为 2-40 个字符的小写字母/数字/连字符，且以字母开头".into())
+    }
 }

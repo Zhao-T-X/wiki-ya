@@ -887,3 +887,21 @@ pub struct ClaimTraceDto {
     /// 该 Claim 参与的演化关系（新→旧）。
     pub evolutions: Vec<EvolutionNodeDto>,
 }
+
+/// 创建自定义 Skill（M11：强制只读）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSkillInput {
+    pub name: String,
+    pub description: String,
+    pub instructions: String,
+}
+
+/// 更新自定义 Skill：产生新版本。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSkillInput {
+    pub name: String,
+    pub description: String,
+    pub instructions: String,
+}

@@ -344,3 +344,26 @@ export function decide_candidate(input: {
 export function get_claim_trace(input: { id: string }): Promise<ClaimTraceDto> {
   return call<ClaimTraceDto>('get_claim_trace', input);
 }
+
+/** 创建自定义 Skill（M11：强制只读）。 */
+export function create_skill(input: {
+  name: string;
+  description: string;
+  instructions: string;
+}): Promise<void> {
+  return call<void>('create_skill', input);
+}
+
+/** 更新自定义 Skill：产生新版本。 */
+export function update_skill(input: {
+  name: string;
+  description: string;
+  instructions: string;
+}): Promise<number> {
+  return call<number>('update_skill', input);
+}
+
+/** 删除自定义 Skill（内置不可删除）。 */
+export function delete_skill(input: { id: string }): Promise<void> {
+  return call<void>('delete_skill', input);
+}
