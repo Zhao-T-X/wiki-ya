@@ -582,6 +582,9 @@ pub struct AskResponse {
     pub sources: Vec<AskSource>,
     /// 上下文统计（预算 / 命中 / 截断），透明可审计（TDD §65）。
     pub context_stats: Option<crate::ai::context::ContextStats>,
+    /// 本次问答的 Run id（M9）：前端可用 `get_run_trace` 查看运行详情。
+    #[serde(default)]
+    pub agent_run_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

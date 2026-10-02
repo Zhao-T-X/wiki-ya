@@ -41,6 +41,7 @@ pub fn ask(
             ),
             sources: Vec::new(),
             context_stats: None,
+            agent_run_id: None,
         });
     }
 
@@ -236,6 +237,7 @@ pub fn ask(
         question: request.question,
         answer: response.text,
         enabled: true,
+        agent_run_id: Some(agent_run_id),
         note: if pack.truncated {
             Some("部分检索结果因超出上下文预算被截断，已优先保留高相关片段。".into())
         } else {

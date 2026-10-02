@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/PageHeader';
-import { app_info, ask, WikiError } from '@/lib/api';
+import { app_info, ask, get_run_trace, WikiError } from '@/lib/api';
 import { newRunId } from '@/lib/format';
 import { useRunEvents } from '@/lib/useRunEvents';
 import { useAsyncData } from '@/lib/hooks';
@@ -151,7 +151,19 @@ export function AskPage() {
             <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/90">
               {result.answer}
             </div>
+            {/* Why（M9）：回答的依据一目了然，条目可下钻到 Claim 溯源。 */}
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted">
+              <span>
+                使用了 <span className="font-medium text-ink">{result.sources.length}</span>{' '}
+                条知识
+                {result.contextStats?.truncated ? ' · 检索结果因超预算被截断' : ''}
+              </span>
+              <span className="text-muted/50">来源见下方 Sources，每条可下钻到溯源</span>
+            </div>
           </Card>
+
+          {/* 运行详情（M9）：Agent Run Trace——模型 / 状态 / 起止。 */}
+          {result.agentRunId ? <AgentRunDetails runId={result.agentRunId} /> : null}
 
           {result.sources.length > 0 ? (
             <Card className="p-5">
@@ -235,5 +247,30 @@ function ContextStat({ label, value }: { label: string; value: number | string }
       <p className="text-[10px] uppercase tracking-wider text-muted">{label}</p>
       <p className="mt-1 font-mono text-sm text-ink">{value}</p>
     </div>
+  );
+}
+
+/** 一次 Ask 的运行详情（M9）：拉统一 Run Trace 展示模型 / 状态 / 起止。 */
+function AgentRunDetails({ runId }: { runId: string }) {
+  const trace = useAsyncData(() => get_run_trace({ id: runId }), [runId]);
+  if (trace.error || !trace.data) return null;
+  const run = trace.data;
+  const model =
+    typeof run.metadata === 'object' && run.metadata !== null && 'model' in run.metadata
+      ? String((run.metadata as Record<string, unknown>).model ?? '')
+      : '';
+  return (
+    <Card className="p-5">
+      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        运行详情
+      </h3>
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+        <Badge tone={run.status === 'completed' ? 'ok' : 'warn'}>{run.status}</Badge>
+        {model ? <span>模型：{model}</span> : null}
+        <span>开始：{run.startedAt}</span>
+        {run.finishedAt ? <span>结束：{run.finishedAt}</span> : null}
+        <span className="font-mono text-muted/50">{run.id.slice(0, 8)}</span>
+      </div>
+    </Card>
   );
 }

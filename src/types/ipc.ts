@@ -528,6 +528,8 @@ export interface AskResponse {
   sources: AskSource[];
   /** 上下文统计（预算 / 命中 / 截断），透明可审计 */
   contextStats: ContextStats | null;
+  /** 本次问答的 Run id（M9）：可查看运行详情。 */
+  agentRunId?: string;
 }
 
 // ---------------------------------------------------------------------------
