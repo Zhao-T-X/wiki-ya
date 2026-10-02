@@ -784,3 +784,13 @@ pub struct RunSkillInput {
     /// 可选：挂到哪个父 Run 下（Agent Run → Skill Run 树）。
     pub parent_run_id: Option<String>,
 }
+
+/// 启动一次 Agent Run 的输入（M4）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunAgentProfileInput {
+    pub name: String,
+    /// 透传给各 Skill 的输入（各 Skill 自行取用所需字段）。
+    #[serde(default)]
+    pub input: serde_json::Value,
+}

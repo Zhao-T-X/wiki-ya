@@ -634,3 +634,14 @@ export type AgentEvent =
   | { type: 'tool_called'; run_id: string; tool: string; arguments: unknown }
   | { type: 'tool_completed'; run_id: string; tool: string; ok: boolean; summary: string }
   | { type: 'agent_finished'; run_id: string; status: string };
+
+/** Agent Profile（M4）：Agent 的声明式配置。 */
+export interface AgentProfile {
+  name: string;
+  displayName: string;
+  /** 空 = 跟随全局 AI 设置 */
+  model: string;
+  skills: string[];
+  policy: string[];
+  systemPrompt: string;
+}

@@ -137,6 +137,54 @@ pub fn ensure_builtin_skills(conn: &Connection) -> AppResult<usize> {
     Ok(seeded)
 }
 
+/// 登记一个 Skill Run（不执行）。版本化 actor = `skill@version`（M3）。
+fn register_skill_run(
+    conn: &Connection,
+    name: &str,
+    input: &Value,
+    parent_run_id: Option<&str>,
+) -> AppResult<String> {
+    SkillName::from_str(name)
+        .map_err(|_| AppError::Domain(format!("未知 Skill `{name}`")))?;
+    // 版本化标识（M3）：Trace 可回答「这条知识当时是哪个版本的 Skill 产生的」。
+    let definition = resolve(conn, name)?;
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let metadata = json!({
+        "input": input,
+        "permissions": definition
+            .permissions
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>(),
+    })
+    .to_string();
+    run_repository::register(
+        conn,
+        &run_id,
+        RunType::Skill,
+        &definition.qualified_name(),
+        parent_run_id,
+        &metadata,
+    )?;
+    Ok(run_id)
+}
+
+/// 同步运行一个 Skill：登记 + 执行（Agent 编排 M4 复用）。
+/// 返回 `(run_id, 结果摘要)`；失败时 Run 已落 Failed 态，错误上抛。
+pub fn run_skill_sync(
+    db_path: &PathBuf,
+    name: &str,
+    input: Value,
+    parent_run_id: Option<&str>,
+    sink: &RunSink,
+) -> AppResult<(String, Value)> {
+    let conn = db::open(db_path)?;
+    let run_id = register_skill_run(&conn, name, &input, parent_run_id)?;
+    drop(conn);
+    let summary = execute_skill_run(db_path, &run_id, name, input, sink)?;
+    Ok((run_id, summary))
+}
+
 /// 启动一次 Skill Run：登记 + 立即返回 run_id，执行在后台完成。
 pub fn start_skill(
     app: tauri::AppHandle,
@@ -145,33 +193,10 @@ pub fn start_skill(
     input: Value,
     parent_run_id: Option<String>,
 ) -> AppResult<String> {
-    SkillName::from_str(name)
-        .map_err(|_| AppError::Domain(format!("未知 Skill `{name}`")))?;
-
-    let run_id = uuid::Uuid::new_v4().to_string();
-    {
+    let run_id = {
         let conn = db::open(&db_path)?;
-        // 版本化标识（M3）：actor = `skill@version`，Trace 可回答
-        // 「这条知识当时是哪个版本的 Skill 产生的」。
-        let definition = resolve(&conn, name)?;
-        let metadata = json!({
-            "input": input,
-            "permissions": definition
-                .permissions
-                .iter()
-                .map(|p| p.as_str())
-                .collect::<Vec<_>>(),
-        })
-        .to_string();
-        run_repository::register(
-            &conn,
-            &run_id,
-            RunType::Skill,
-            &definition.qualified_name(),
-            parent_run_id.as_deref(),
-            &metadata,
-        )?;
-    }
+        register_skill_run(&conn, name, &input, parent_run_id.as_deref())?
+    };
 
     // 命令立刻返回；Skill 在后台线程同步执行（内部是阻塞 SQLite + HTTP）。
     let run_id_for_task = run_id.clone();
@@ -183,20 +208,20 @@ pub fn start_skill(
         })
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = execute_sync(&db_path, &run_id_for_task, &name_for_task, input, &run_events);
+        let _ = execute_skill_run(&db_path, &run_id_for_task, &name_for_task, input, &run_events);
     });
 
     Ok(run_id)
 }
 
-/// 同步执行体（`start_skill` 的后台部分；公开以便测试）。
-pub fn execute_sync(
+/// 同步执行已登记的 Skill Run，返回结果摘要（公开以便测试与编排）。
+pub fn execute_skill_run(
     db_path: &PathBuf,
     run_id: &str,
     name: &str,
     input: Value,
     sink: &RunSink,
-) -> AppResult<()> {
+) -> AppResult<Value> {
     let conn = db::open(db_path)?;
     run_repository::set_status(&conn, run_id, ExtractionRunStatus::Running)?;
     sink(&RunEvent::Started {
@@ -214,7 +239,7 @@ pub fn execute_sync(
             sink(&RunEvent::Completed {
                 run_id: run_id.to_string(),
             });
-            Ok(())
+            Ok(summary)
         }
         Err(err) => {
             let message = err.to_string();
@@ -304,7 +329,6 @@ fn input_string(input: &Value, key: &str) -> AppResult<String> {
         .ok_or_else(|| AppError::Domain(format!("Skill 输入缺少字段 `{key}`")))
 }
 
-#[cfg(test)]
 /// 解析 SKILL.md：frontmatter（`---` 之间）+ 正文 instructions。
 ///
 /// 只支持本仓库用到的子集：`key: value`、`key: [a, b]` 列表、
@@ -451,7 +475,7 @@ mod tests {
             .unwrap();
         }
 
-        let err = execute_sync(
+        let err = execute_skill_run(
             &db_path,
             run_id,
             "knowledge-extraction",
@@ -487,7 +511,7 @@ mod tests {
             .unwrap();
         }
 
-        execute_sync(
+        execute_skill_run(
             &db_path,
             run_id,
             "knowledge-answering",

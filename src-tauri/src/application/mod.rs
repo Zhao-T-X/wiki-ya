@@ -7,6 +7,7 @@
 //!
 //! 本层可以被 Commands 和 AI Runtime 调用；反过来不行。
 
+pub mod agent_profile_service;
 pub mod ai_service;
 pub mod ask_service;
 pub mod capture_service;

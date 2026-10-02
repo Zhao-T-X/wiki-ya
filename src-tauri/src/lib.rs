@@ -96,6 +96,9 @@ pub fn run() {
                 if seeded > 0 {
                     crate::log_info!("启动时同步了 {} 个内置 Skill", seeded);
                 }
+
+                // M4：默认 Agent Profile 幂等 seed（不覆盖用户修改）。
+                crate::application::agent_profile_service::ensure_default_profiles(&conn)?;
             }
 
             // SEC-001：初始化 API Key 的加解密器（主密钥文件首次运行自动生成，权限 0600）。
@@ -140,6 +143,9 @@ pub fn run() {
             // ---- skill runtime（M2）----
             commands::skill::list_skills,
             commands::skill::run_skill,
+            // ---- agent profile（M4）----
+            commands::agent_profile::list_agent_profiles,
+            commands::agent_profile::run_agent_profile,
             // ---- ask（Phase 6 问答）----
             commands::ask::ask,
             // ---- research（Phase 6 多步研究）----

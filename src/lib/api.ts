@@ -29,6 +29,7 @@ import type {
   ExtractionReport,
   ExtractionRunDto,
   RunTraceDto,
+  AgentProfile,
   SkillDescriptorDto,
   AskRequest,
   AskResponse,
@@ -308,4 +309,17 @@ export function run_skill(input: {
   parentRunId?: string;
 }): Promise<string> {
   return call<string>('run_skill', input);
+}
+
+/** 列出全部 Agent Profile（M4）。 */
+export function list_agent_profiles(): Promise<AgentProfile[]> {
+  return call<AgentProfile[]>('list_agent_profiles', {});
+}
+
+/** 启动一次 Agent Run：立即返回 runId，其 Skill Runs 挂为子 Run。 */
+export function run_agent_profile(input: {
+  name: string;
+  input?: unknown;
+}): Promise<string> {
+  return call<string>('run_agent_profile', input);
 }

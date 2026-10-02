@@ -12,6 +12,7 @@
 //! - [`review`]    提案审核
 //! - [`search`]    检索语义（RRF、预算）
 
+pub mod agent_profile;
 pub mod common;
 pub mod extraction;
 pub mod evidence;
