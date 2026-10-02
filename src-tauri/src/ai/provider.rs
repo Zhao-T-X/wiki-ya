@@ -118,7 +118,7 @@ impl Provider for OfflineProvider {
 /// （典型：DeepSeek 推理模型经某些网关，HTTP 200 + 0 字符挂起 30s）。
 /// key = `base_url|model`。发现一次即记住，后续补全直接走流式，
 /// 省掉每次 4×30s 的无效重试。
-fn stream_only_endpoints() -> &'static Mutex<HashSet<String>> {
+pub(crate) fn stream_only_endpoints() -> &'static Mutex<HashSet<String>> {
     static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     SET.get_or_init(|| Mutex::new(HashSet::new()))
 }
@@ -790,5 +790,20 @@ pub fn default_provider(conn: &Connection) -> Box<dyn Provider> {
         Box::new(OpenAiProvider::new(config))
     } else {
         Box::new(OfflineProvider)
+    }
+}
+
+/// 端点是否已标记为「流式专用」（供 RigAdapter 等其他 provider 路径复用）。
+pub(crate) fn is_streaming_only(key: &str) -> bool {
+    stream_only_endpoints()
+        .lock()
+        .map(|set| set.contains(key))
+        .unwrap_or(false)
+}
+
+/// 标记端点为「流式专用」（发现非流式空体 / 流式兜底成功时调用）。
+pub(crate) fn mark_streaming_only(key: &str) {
+    if let Ok(mut set) = stream_only_endpoints().lock() {
+        set.insert(key.to_string());
     }
 }

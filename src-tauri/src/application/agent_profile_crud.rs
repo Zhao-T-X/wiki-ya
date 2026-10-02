@@ -142,6 +142,7 @@ pub fn list_or_seed(conn: &Connection) -> AppResult<Vec<AgentProfile>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::agent_profile_service::get_profile;
     use crate::infrastructure::db;
 
     fn profile(name: &str, policy: &[&str], skills: &[&str]) -> AgentProfile {

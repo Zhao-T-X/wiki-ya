@@ -14,17 +14,20 @@
 //!    current-thread tokio runtime 桥接；
 //! 3. 配置从 `AiConfig`（DB 加密存储）出发，不走 rig 的 `.env` 约定。
 
+use futures_util::StreamExt;
 use rig::completion::CompletionModel as _;
 use rig::providers::openai;
 
 use crate::ai::agents::AgentRole;
 use crate::ai::config::AiConfig;
+use crate::ai::provider::{is_streaming_only, mark_streaming_only};
 use crate::ai::runtime::{clip_text, parse_action, tools_manual, AgentStep};
 use crate::ai::tools;
 use crate::error::{AppError, AppResult};
 use crate::events::{RunEvent, RunSink};
 use rusqlite::Connection;
 use serde_json::json;
+use std::pin::pin;
 
 /// 一次 Agent 执行请求（wiki-ya 稳定契约，对齐现有 `AgentRun` 语义；
 /// PR2 起扩展 tools / policy / parent_run_id 等字段）。
@@ -90,23 +93,70 @@ impl RigAdapter {
     }
 
     async fn complete_once(&self, request: AgentRequest) -> AppResult<AgentResult> {
+        // 与自研 provider 相同的「流式专用端点」记忆（M14 热修复用）：
+        // DeepSeek 推理端点等非流式恒为空体，只有流式才有正文。
+        let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
+        let text = if is_streaming_only(&stream_key) {
+            self.stream_collect(&request).await?
+        } else {
+            let non_stream = self.complete_once_inner(&request).await?;
+            if non_stream.trim().is_empty() {
+                crate::log_warn!("rig 非流式返回空文本，端点 {stream_key} 标记为流式专用并转流式");
+                mark_streaming_only(&stream_key);
+                self.stream_collect(&request).await?
+            } else {
+                non_stream
+            }
+        };
+
+        Ok(AgentResult {
+            answer: text,
+            model: self.config.model.clone(),
+            steps: Vec::new(),
+            rounds: 1,
+        })
+    }
+
+    /// 非流式单轮补全，返回纯文本。
+    async fn complete_once_inner(&self, request: &AgentRequest) -> AppResult<String> {
         let client = self.completions_client()?;
         let model = openai::GenericCompletionModel::new(client, self.config.model.clone());
         let response = model
-            .completion_request(request.goal)
-            .preamble(request.system)
+            .completion_request(request.goal.clone())
+            .preamble(request.system.clone())
             .temperature(0.3)
             .max_tokens(8_192)
             .send()
             .await
             .map_err(|err| AppError::Internal(format!("rig 补全失败：{err}")))?;
+        Ok(join_choice_text(response.choice))
+    }
 
-        Ok(AgentResult {
-            answer: join_choice_text(response.choice),
-            model: self.config.model.clone(),
-            steps: Vec::new(),
-            rounds: 1,
-        })
+    /// 流式补全：逐帧收集文本（推理模型的 reasoning 帧被自然跳过）。
+    async fn stream_collect(&self, request: &AgentRequest) -> AppResult<String> {
+        let client = self.completions_client()?;
+        let model = openai::GenericCompletionModel::new(client, self.config.model.clone());
+        let stream = model
+            .completion_request(request.goal.clone())
+            .preamble(request.system.clone())
+            .temperature(0.3)
+            .max_tokens(32_768)
+            .stream()
+            .await
+            .map_err(|err| AppError::Internal(format!("rig 流式请求失败：{err}")))?;
+        let mut stream = pin!(stream);
+        let mut text = String::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(rig::streaming::StreamedAssistantContent::Text(delta)) => {
+                    text.push_str(&delta.text);
+                }
+                // 工具调用 / 推理帧对纯补全无意义，跳过。
+                Ok(_) => {}
+                Err(err) => return Err(AppError::Internal(format!("rig 流式中断：{err}"))),
+            }
+        }
+        Ok(text)
     }
 }
 

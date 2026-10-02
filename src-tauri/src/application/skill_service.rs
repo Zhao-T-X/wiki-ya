@@ -19,7 +19,8 @@ use std::str::FromStr;
 
 use serde_json::{json, Value};
 
-use crate::ai::provider::{default_provider, CompletionRequest};
+use crate::ai::config::AiConfig;
+use crate::ai::rig_adapter::RigAdapter;
 use crate::application::ai_service;
 use crate::application::ask_service;
 use crate::application::dto::{AskRequest, SkillDescriptorDto};
@@ -337,14 +338,19 @@ fn execute_inner(
 
     // 自定义 Skill（M11）：通用 Prompt 执行——**强制只读**，产物只是回答，
     // 不产生候选/提案，Ontology 与 Knowledge Policy 不可能被绕过。
-    generic_prompt_execute(conn, name, &input)
+    generic_prompt_execute(conn, name, run_id, &input)
 }
 
 /// 自定义 Skill 的通用执行：instructions 作系统提示，输入文本作用户消息。
-fn generic_prompt_execute(conn: &mut Connection, name: &str, input: &Value) -> AppResult<Value> {
+fn generic_prompt_execute(
+    conn: &mut Connection,
+    name: &str,
+    run_id: &str,
+    input: &Value,
+) -> AppResult<Value> {
     let definition = resolve(conn, name)?;
-    let provider = default_provider(conn);
-    if !provider.enabled() {
+    let config = crate::ai::config::AiConfig::from_settings(conn);
+    if !config.enabled {
         // 诚实降级：不伪造回答。
         return Ok(json!({ "enabled": false, "answer": "" }));
     }
@@ -371,9 +377,14 @@ fn generic_prompt_execute(conn: &mut Connection, name: &str, input: &Value) -> A
         }
     };
 
-    let request = CompletionRequest::structured(definition.instructions.clone(), text);
-    let response = provider.complete(&request)?;
-    Ok(json!({ "enabled": true, "answer": response.text }))
+    // M14 PR4：自定义 Skill 的模型调用走 RigAdapter（含流式专用端点兜底）。
+    let adapter = RigAdapter::new(config);
+    let result = adapter.run_blocking(crate::ai::rig_adapter::AgentRequest {
+        goal: text,
+        system: definition.instructions,
+        run_id: run_id.to_string(),
+    })?;
+    Ok(json!({ "enabled": true, "answer": result.answer }))
 }
 
 fn input_string(input: &Value, key: &str) -> AppResult<String> {
