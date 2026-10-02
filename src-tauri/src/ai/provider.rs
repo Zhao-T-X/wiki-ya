@@ -7,6 +7,9 @@
 //! - 离线 provider 永远 `enabled() == false`，仅用于「未配置 Key」时的诚实降级，
 //!   不返回任何编造内容。
 
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+
 use rusqlite::Connection;
 
 use crate::ai::config::AiConfig;
@@ -109,6 +112,15 @@ impl Provider for OfflineProvider {
             "AI 未启用：未配置 WIKIYA_API_KEY，无法进行向量化。".into(),
         ))
     }
+}
+
+/// 进程级记忆：非流式恒为空体、只有流式才有正文的端点
+/// （典型：DeepSeek 推理模型经某些网关，HTTP 200 + 0 字符挂起 30s）。
+/// key = `base_url|model`。发现一次即记住，后续补全直接走流式，
+/// 省掉每次 4×30s 的无效重试。
+fn stream_only_endpoints() -> &'static Mutex<HashSet<String>> {
+    static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// OpenAI 兼容 provider（也兼容任意 `/chat/completions` 端点，如本地推理服务）。
@@ -233,6 +245,18 @@ impl Provider for OpenAiProvider {
 
         let client = reqwest::blocking::Client::new();
         let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
+        if stream_only_endpoints()
+            .lock()
+            .map(|set| set.contains(&stream_key))
+            .unwrap_or(false)
+        {
+            crate::log_info!("端点已标记为流式专用，直接走流式补全");
+            let mut stream_req = request.clone();
+            stream_req.json_mode = false;
+            stream_req.max_tokens = request.max_tokens.max(32_768);
+            return self.complete_streaming(&stream_req, &|_| {});
+        }
 
         // 推理模型（如 DeepSeek-R1/Flash）会把 token 预算花在 reasoning_content 上，
         // 导致 content 为空甚至被 max_tokens 截断（finish_reason=length）。
@@ -368,6 +392,19 @@ impl Provider for OpenAiProvider {
                         raw.chars().count(),
                         crate::logging::clip(&raw, 400)
                     ));
+                    // HTTP 200 + 0 字符响应体 = 「流式专用端点」的强特征：
+                    // 记住它，本进程后续补全直接走流式；当前调用也立即
+                    // 止损，不再把剩余组合耗在 30s 级的挂起上。
+                    if raw.trim().is_empty() {
+                        if let Ok(mut set) = stream_only_endpoints().lock() {
+                            set.insert(stream_key.clone());
+                        }
+                        crate::log_warn!(
+                            "端点 {} 非流式返回空体，已标记为流式专用，本次直接转流式",
+                            stream_key
+                        );
+                        break;
+                    }
                     continue;
                 }
             };
@@ -442,6 +479,9 @@ impl Provider for OpenAiProvider {
             match self.complete_streaming(&stream_req, &|_| {}) {
                 Ok(resp) if !resp.text.trim().is_empty() => {
                     crate::log_info!("流式兜底成功：{} 字符", resp.text.chars().count());
+                    if let Ok(mut set) = stream_only_endpoints().lock() {
+                        set.insert(stream_key.clone());
+                    }
                     return Ok(resp);
                 }
                 Ok(_) => crate::log_warn!("流式兜底返回内容仍为空"),
@@ -539,6 +579,18 @@ impl Provider for OpenAiProvider {
 
         let client = reqwest::blocking::Client::new();
         let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
+        if stream_only_endpoints()
+            .lock()
+            .map(|set| set.contains(&stream_key))
+            .unwrap_or(false)
+        {
+            crate::log_info!("端点已标记为流式专用，直接走流式补全");
+            let mut stream_req = request.clone();
+            stream_req.json_mode = false;
+            stream_req.max_tokens = request.max_tokens.max(32_768);
+            return self.complete_streaming(&stream_req, &|_| {});
+        }
         crate::log_debug!(
             "AI 流式请求 → POST {url} model={} max_tokens={}",
             self.config.model,
