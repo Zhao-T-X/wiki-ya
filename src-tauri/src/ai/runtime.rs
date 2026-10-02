@@ -206,13 +206,13 @@ fn run_inner(
     )))
 }
 
-enum Action {
+pub(crate) enum Action {
     Final { answer: String },
     Tool { tool: String, args: Value },
 }
 
 /// 解析模型的 JSON 动作（宽松：容忍 markdown 围栏与前后解释文字）。
-fn parse_action(text: &str) -> AppResult<Action> {
+pub(crate) fn parse_action(text: &str) -> AppResult<Action> {
     let start = text.find('{').ok_or_else(|| {
         AppError::Internal(format!(
             "模型输出中没有 JSON 动作：{}",
@@ -266,7 +266,7 @@ fn parse_action(text: &str) -> AppResult<Action> {
 }
 
 /// 工具手册：白名单、参数与 JSON 动作协议（拼进 system prompt）。
-fn tools_manual() -> String {
+pub(crate) fn tools_manual() -> String {
     let tools = [
         ("search_knowledge", r#"{"query": "关键词", "limit": 8}"#),
         ("get_knowledge", r#"{"id": "<claim 或 entity id>"}"#),
@@ -303,7 +303,7 @@ fn tools_manual() -> String {
     )
 }
 
-fn clip_text(text: &str, limit: usize) -> String {
+pub(crate) fn clip_text(text: &str, limit: usize) -> String {
     let clipped: String = text.chars().take(limit).collect();
     if clipped.len() < text.len() {
         format!("{clipped}…（已截断）")

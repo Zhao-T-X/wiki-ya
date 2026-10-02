@@ -17,8 +17,14 @@
 use rig::completion::CompletionModel as _;
 use rig::providers::openai;
 
+use crate::ai::agents::AgentRole;
 use crate::ai::config::AiConfig;
+use crate::ai::runtime::{clip_text, parse_action, tools_manual, AgentStep};
+use crate::ai::tools;
 use crate::error::{AppError, AppResult};
+use crate::events::{RunEvent, RunSink};
+use rusqlite::Connection;
+use serde_json::json;
 
 /// 一次 Agent 执行请求（wiki-ya 稳定契约，对齐现有 `AgentRun` 语义；
 /// PR2 起扩展 tools / policy / parent_run_id 等字段）。
@@ -34,6 +40,10 @@ pub struct AgentRequest {
 pub struct AgentResult {
     pub answer: String,
     pub model: String,
+    /// 工具调用步骤（Golden 对比：与 Legacy `AgentRun.steps` 对齐）。
+    pub steps: Vec<AgentStep>,
+    /// 实际执行轮数。
+    pub rounds: usize,
 }
 
 /// Rig 实现的 Agent Runtime 适配器。
@@ -94,6 +104,8 @@ impl RigAdapter {
         Ok(AgentResult {
             answer: join_choice_text(response.choice),
             model: self.config.model.clone(),
+            steps: Vec::new(),
+            rounds: 1,
         })
     }
 }
@@ -187,5 +199,182 @@ mod tests {
             .expect("rig live smoke 应成功");
         assert!(!result.answer.trim().is_empty());
         println!("[rig adapter] {}", result.answer);
+    }
+
+    /// Golden 对比（迁移计划第十六节）：同一目标分别跑 Legacy runtime
+    /// 与 Rig 适配层，对比工具序列与最终答案——**行为不漂移**才切换调用方。
+    /// `cargo test --lib golden -- --ignored --nocapture`
+    #[test]
+    #[ignore = "需要真实 API Key，仅手动运行"]
+    fn golden_legacy_vs_rig() {
+        let key = std::env::var("WIKIYA_API_KEY").unwrap_or_default();
+        if key.trim().is_empty() {
+            eprintln!("跳过：未设置 WIKIYA_API_KEY");
+            return;
+        }
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::db::apply_migrations(&mut conn).unwrap();
+        let goal = "查询知识库中关于 Rust 的内容并给出结论；若知识库为空，如实说明。";
+        let role = AgentRole::Knowledge;
+
+        // Legacy：自研 ReAct 循环。
+        let legacy = crate::ai::runtime::run(&conn, role, goal, "golden-legacy", None)
+            .expect("legacy runtime 应成功");
+        // Rig：适配层循环（同一协议、同一白名单、同一轮数上限）。
+        let config = AiConfig {
+            api_key: Some(key),
+            base_url: std::env::var("WIKIYA_BASE_URL")
+                .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
+            model: std::env::var("WIKIYA_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into()),
+            embedding_model: "text-embedding-3-small".into(),
+            token_budget: 4000,
+            enabled: true,
+        };
+        let rig_result = RigAdapter::new(config)
+            .run_react_blocking(&conn, role, goal, "golden-rig", None)
+            .expect("rig runtime 应成功");
+
+        // 行为对比（人工评审工具序列；自动断言基本健全性）。
+        eprintln!(
+            "legacy: {} 轮，工具 {:?}",
+            legacy.rounds,
+            legacy
+                .steps
+                .iter()
+                .map(|s| s.tool.clone())
+                .collect::<Vec<_>>()
+        );
+        eprintln!(
+            "rig:    {} 轮，工具 {:?}",
+            rig_result.rounds,
+            rig_result
+                .steps
+                .iter()
+                .map(|s| s.tool.clone())
+                .collect::<Vec<_>>()
+        );
+        eprintln!("legacy answer: {}", clip_text(&legacy.answer, 200));
+        eprintln!("rig answer:    {}", clip_text(&rig_result.answer, 200));
+        assert!(!legacy.answer.trim().is_empty());
+        assert!(!rig_result.answer.trim().is_empty());
+        // 两者都应在白名单内行动（无越权工具）。
+        for step in legacy.steps.iter().chain(rig_result.steps.iter()) {
+            assert!(
+                tools::ToolName::from_str(&step.tool).is_some(),
+                "越权工具 {}",
+                step.tool
+            );
+        }
+    }
+}
+
+/// 轮数上限（与 Legacy runtime 一致——Golden 对比的行为基线之一）。
+pub const MAX_ROUNDS: usize = 8;
+const TOOL_OUTPUT_LIMIT: usize = 1600;
+
+impl RigAdapter {
+    /// 多轮 Agent 循环（PR2，与 Legacy `runtime::run` 行为对齐）：
+    /// 每轮 rig 补全 → 解析 JSON 动作 → 白名单工具执行（Policy 闸门）
+    /// → 输出回填 → 直到 final / 轮数上限。全程发统一 RunEvent。
+    pub fn run_react_blocking(
+        &self,
+        conn: &Connection,
+        role: AgentRole,
+        goal: &str,
+        run_id: &str,
+        sink: Option<&RunSink>,
+    ) -> AppResult<AgentResult> {
+        self.require_key()?;
+        let policy = role.policy();
+        let system = format!("{}\n\n{}", role.system_prompt(), tools_manual());
+        let mut user = format!("目标：{goal}");
+        let mut steps: Vec<AgentStep> = Vec::new();
+
+        let notify = |event: RunEvent| {
+            if let Some(sink) = sink {
+                sink(&event);
+            }
+        };
+        notify(RunEvent::Started {
+            run_id: run_id.to_string(),
+            run_type: crate::domain::run::RunType::Agent,
+        });
+
+        for round in 1..=MAX_ROUNDS {
+            let final_hint = if round == MAX_ROUNDS {
+                "\n\n（这是最后一轮：不要调用工具，直接输出 {\"action\":\"final\",\"answer\":\"...\"}。）"
+            } else {
+                ""
+            };
+            let user_now = format!("{user}{final_hint}");
+            let raw = block_on(async {
+                let client = self.completions_client()?;
+                let model = openai::GenericCompletionModel::new(client, self.config.model.clone());
+                model
+                    .completion_request(user_now)
+                    .preamble(system.clone())
+                    .temperature(0.3)
+                    .max_tokens(8_192)
+                    .send()
+                    .await
+                    .map_err(|err| AppError::Internal(format!("rig 补全失败：{err}")))
+            })?;
+            let text = join_choice_text(raw.choice);
+            if text.trim().is_empty() {
+                return Err(AppError::Internal("rig 模型未返回任何文本".into()));
+            }
+
+            match parse_action(&text)? {
+                crate::ai::runtime::Action::Final { answer } => {
+                    notify(RunEvent::Completed {
+                        run_id: run_id.to_string(),
+                    });
+                    return Ok(AgentResult {
+                        answer,
+                        model: self.config.model.clone(),
+                        steps,
+                        rounds: round,
+                    });
+                }
+                crate::ai::runtime::Action::Tool { tool, args } => {
+                    notify(RunEvent::ToolCalled {
+                        run_id: run_id.to_string(),
+                        tool: tool.clone(),
+                        summary: clip_text(&args.to_string(), 200),
+                    });
+                    let name = tools::ToolName::from_str(&tool).ok_or_else(|| {
+                        AppError::Internal(format!("模型请求了白名单之外的工具 `{tool}`"))
+                    })?;
+                    let output = tools::execute(conn, name, &args, &policy)
+                        .and_then(|out| Ok(json!(out.render())))
+                        .unwrap_or_else(|err| json!({ "error": err.to_string() }));
+                    let ok = output.get("error").is_none();
+                    let summary = clip_text(&output.to_string(), TOOL_OUTPUT_LIMIT);
+                    steps.push(AgentStep {
+                        tool: tool.clone(),
+                        args: args.clone(),
+                        summary: summary.clone(),
+                    });
+                    notify(RunEvent::ToolCompleted {
+                        run_id: run_id.to_string(),
+                        tool: tool.clone(),
+                        ok,
+                        summary: summary.clone(),
+                    });
+                    user.push_str(&format!(
+                        "\n\n[第 {round} 轮：工具 `{tool}` 输出]\n{summary}\n\n\
+                         请继续：要么调用下一个工具，要么给出 final 答案。"
+                    ));
+                }
+            }
+        }
+
+        notify(RunEvent::Failed {
+            run_id: run_id.to_string(),
+            error: format!("Agent 在 {MAX_ROUNDS} 轮内未给出最终答案"),
+        });
+        Err(AppError::Internal(format!(
+            "Agent 在 {MAX_ROUNDS} 轮内未给出最终答案"
+        )))
     }
 }
