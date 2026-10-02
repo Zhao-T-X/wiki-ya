@@ -45,10 +45,18 @@ regex = "1"
 aes-gcm = "0.11"
 # 主密钥与 nonce 的加密安全随机数来源（走 OS CSPRNG）。
 getrandom = "0.2"
+# PoC 评估：rig-core 替代自研 Provider 层的可行性验证。
+# 仅在 `--features poc-rig` 下编译，默认构建完全不受影响。
+# 注意：package 名 rig-core 的 lib 名为 rig，显式映射便于代码引用。
+rig = { version = "0.42", package = "rig-core", optional = true }
+futures-util = { version = "0.3", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
 
 [features]
 # 保留：后续 custom-protocol 打包模式可能用到
 custom-protocol = ["tauri/custom-protocol"]
+# PoC：rig-core Provider 适配（默认关闭）
+poc-rig = ["dep:rig", "dep:futures-util", "dep:tokio"]
 
 [profile.dev]
 # 依赖只编译一次，用 -O 换取更快的运行期；自身代码保持 opt-level 0 便于调试。

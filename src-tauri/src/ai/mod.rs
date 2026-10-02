@@ -21,5 +21,8 @@ pub mod agents;
 pub mod config;
 pub mod context;
 pub mod provider;
+// PoC（EXTRACTION 评估）：rig-core 适配层，仅 `--features poc-rig` 下编译。
+#[cfg(feature = "poc-rig")]
+pub mod provider_rig;
 pub mod runtime;
 pub mod tools;
