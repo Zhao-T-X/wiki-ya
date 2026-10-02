@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { ClaimList } from '@/features/knowledge/ClaimList';
+import { CorrectionPanel } from '@/features/knowledge/CorrectionPanel';
 import { ExtractionPanel } from '@/features/knowledge/ExtractionPanel';
 import { analyze_document, get_document, reindex_document, WikiError } from '@/lib/api';
 import { formatChars, formatDateTime, truncate } from '@/lib/format';
@@ -156,6 +157,8 @@ export function DocumentDetailPage() {
             documentId={data.document.id}
             onClaimsAccepted={() => detail.reload()}
           />
+
+          <CorrectionPanel documentId={data.document.id} />
         </div>
       ) : null}
     </div>

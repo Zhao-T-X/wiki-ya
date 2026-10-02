@@ -312,9 +312,18 @@ fn execute_inner(
                 run_id: run_id.to_string(),
                 count: analysis.relations_written as usize,
             });
+            // M10：提案明细（id/关系/理由）写进 Run metadata——
+            // Review 队列可决策，Trace 可回看"当时提了什么、为什么"。
             Ok(json!({
                 "proposals": analysis.relations_written,
                 "scanned": analysis.claims_scanned,
+                "relations": analysis.verdicts.iter().map(|v| json!({
+                    "id": v.id,
+                    "relationship": v.relationship,
+                    "status": v.status,
+                    "reason": v.reason,
+                    "suggestedAction": v.suggested_action,
+                })).collect::<Vec<_>>(),
             }))
         }
     }
