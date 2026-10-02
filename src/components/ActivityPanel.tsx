@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
-import { list_documents, list_extraction_runs } from '@/lib/api';
+import { get_run_trace, list_documents, list_extraction_runs } from '@/lib/api';
 import { isTerminal, STAGE_LABEL, STATUS_LABEL, STATUS_TONE } from '@/lib/extraction';
+import { useAsyncData } from '@/lib/hooks';
 import { useRunEvents } from '@/lib/useRunEvents';
 import type { DocumentSummary, ExtractionRunDto } from '@/types/ipc';
 
@@ -17,7 +18,6 @@ import type { DocumentSummary, ExtractionRunDto } from '@/types/ipc';
  * 因此页面关了 / 应用重启后再回来，历史依然在。
  */
 export function ActivityPanel() {
-  const navigate = useNavigate();
   const [runs, setRuns] = useState<ExtractionRunDto[]>([]);
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -57,47 +57,80 @@ export function ActivityPanel() {
       ) : null}
 
       <div className="space-y-2">
-        {runs.map((run) => {
-          const title = titles[run.documentId] ?? run.documentId.slice(0, 8);
-          const running = !isTerminal(run.status);
-          const tone = STATUS_TONE[run.status] ?? 'neutral';
-          return (
-            <Card key={run.id} className="p-3">
-              <button
-                type="button"
-                className="flex w-full items-start justify-between gap-3 text-left"
-                onClick={() => navigate(`/documents/${run.documentId}`)}
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge tone={tone}>{STATUS_LABEL[run.status] ?? run.status}</Badge>
-                    <span className="truncate text-sm text-ink">{title}</span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-muted">
-                    {running && run.stage
-                      ? `${STAGE_LABEL[run.stage] ?? run.stage}`
-                      : null}
-                    {run.totalChunks > 0
-                      ? ` · ${run.processedChunks}/${run.totalChunks} 块`
-                      : null}
-                    {!running && run.candidatesFound > 0
-                      ? ` · ${run.candidatesFound} 候选`
-                      : null}
-                    {!running && run.changesFound > 0 ? ` · ${run.changesFound} 变更` : null}
-                  </p>
-                </div>
-                <Link
-                  to={`/documents/${run.documentId}`}
-                  className="shrink-0 text-[11px] text-accent hover:underline"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  查看
-                </Link>
-              </button>
-            </Card>
-          );
-        })}
+        {runs.map((run) => (
+          <ActivityItem key={run.id} run={run} titles={titles} />
+        ))}
       </div>
     </section>
+  );
+}
+
+/** 单条运行记录：点击展开运行详情（get_run_trace，M13）。 */
+function ActivityItem({
+  run,
+  titles,
+}: {
+  run: ExtractionRunDto;
+  titles: Record<string, string>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const trace = useAsyncData(
+    () => (expanded ? get_run_trace({ id: run.id }) : Promise.resolve(null)),
+    [expanded, run.id],
+    expanded,
+  );
+  const title = titles[run.documentId] ?? run.documentId.slice(0, 8);
+  const running = !isTerminal(run.status);
+  const tone = STATUS_TONE[run.status] ?? 'neutral';
+
+  return (
+    <Card className="p-3">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-3 text-left"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge tone={tone}>{STATUS_LABEL[run.status] ?? run.status}</Badge>
+            <span className="truncate text-sm text-ink">{title}</span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted">
+            {running && run.stage ? `${STAGE_LABEL[run.stage] ?? run.stage}` : null}
+            {run.totalChunks > 0 ? ` · ${run.processedChunks}/${run.totalChunks} 块` : null}
+            {!running && run.candidatesFound > 0 ? ` · ${run.candidatesFound} 候选` : null}
+            {!running && run.changesFound > 0 ? ` · ${run.changesFound} 变更` : null}
+            <span className="text-muted/50"> · {expanded ? '收起详情' : '展开详情'}</span>
+          </p>
+        </div>
+        <Link
+          to={`/documents/${run.documentId}`}
+          className="shrink-0 text-[11px] text-accent hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          查看
+        </Link>
+      </button>
+      {expanded && trace.data ? (
+        <div className="mt-2 space-y-1 border-t border-line pt-2 text-[11px] text-muted">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-muted/70">{run.id.slice(0, 8)}</span>
+            <span>{trace.data.actor || trace.data.runType}</span>
+            <span>开始 {trace.data.startedAt}</span>
+            {trace.data.finishedAt ? <span>结束 {trace.data.finishedAt}</span> : null}
+          </div>
+          {trace.data.agentSteps.length > 0 ? (
+            <ul className="space-y-0.5">
+              {trace.data.agentSteps.map((step) => (
+                <li key={step.stepIndex}>
+                  <span className="font-mono">#{step.stepIndex}</span> {step.name}
+                  {step.status === 'failed' ? '（失败）' : ''}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
   );
 }

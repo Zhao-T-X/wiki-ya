@@ -6,7 +6,6 @@
 //! **不写业务逻辑**：状态迁移、校验、事务全部下沉到 `application`。
 
 pub mod agent_profile;
-pub mod ai;
 pub mod ask;
 pub mod candidate;
 pub mod documents;

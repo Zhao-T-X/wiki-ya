@@ -131,8 +131,6 @@ pub fn run() {
             commands::settings::knowledge_health,
             commands::settings::get_settings,
             commands::settings::update_settings,
-            // ---- ai（Phase 5 抽取）----
-            commands::ai::extract_claims,
             // ---- extraction run（EXTRACTION-001：异步抽取后台任务）----
             commands::extraction::start_extraction,
             commands::extraction::get_extraction_run,

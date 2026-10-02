@@ -17,6 +17,7 @@ import {
   app_info,
   create_document,
   get_extraction_run,
+  list_candidates,
   list_documents,
   list_extraction_runs,
   list_registries,
@@ -31,10 +32,10 @@ import { relationshipLabel } from '@/lib/status';
 import { isTerminal, STAGE_LABEL, STATUS_LABEL } from '@/lib/extraction';
 import { useEffect, useCallback } from 'react';
 import type {
+  CandidateDto,
   AnalysisReport,
   DocumentSummary,
   RunEvent,
-  ExtractionReport,
   ExtractionRunDto,
 } from '@/types/ipc';
 
@@ -64,7 +65,7 @@ export function HomePage() {
   // 捕获之后的「下一步」结果。全部来自真实调用，失败就如实说。
   const [homeRunId, setHomeRunId] = useState<string | null>(null);
   const [homeRun, setHomeRun] = useState<ExtractionRunDto | null>(null);
-  const [homeExtraction, setHomeExtraction] = useState<ExtractionReport | null>(null);
+  const [homeCandidates, setHomeCandidates] = useState<CandidateDto[]>([]);
   const runs = useAsyncData(() => list_extraction_runs({ limit: 10 }), []);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
@@ -94,7 +95,7 @@ export function HomePage() {
     setFormError(null);
     setConflictMatches(null);
     setCreated(null);
-    setHomeExtraction(null);
+    setHomeCandidates([]);
     setAnalysis(null);
 
     try {
@@ -131,7 +132,7 @@ export function HomePage() {
    */
   async function runExtraction(documentId: string) {
     setFormError(null);
-    setHomeExtraction(null);
+    setHomeCandidates([]);
     try {
       const id = await start_extraction({ id: documentId });
       setHomeRunId(id);
@@ -144,7 +145,7 @@ export function HomePage() {
     setHomeRun(next);
     if (next.status === 'completed' && next.resultJson) {
       try {
-        setHomeExtraction(JSON.parse(next.resultJson) as ExtractionReport);
+        list_candidates({ id: next.id }).then(setHomeCandidates).catch(() => {});
       } catch {
         // 结果 JSON 损坏：忽略，不让卡片崩。
       }
@@ -307,7 +308,7 @@ export function HomePage() {
                       disabled={homeRunning}
                       onClick={() => runExtraction(created.id)}
                     >
-                      {homeExtraction ? '重新抽取' : '用 AI 抽取知识'}
+                      {homeCandidates.length > 0 ? '重新抽取' : '用 AI 抽取知识'}
                     </Button>
                   ) : null}
                   <Button size="sm" loading={analyzing} onClick={runAnalysis}>
@@ -341,30 +342,20 @@ export function HomePage() {
                   </p>
                 ) : null}
 
-                {homeExtraction ? (
-                  homeExtraction.enabled ? (
-                    <p className="mt-3 rounded-md border border-line bg-canvas px-3 py-2">
-                      发现{' '}
-                      <span className="font-medium text-ink">
-                        {homeExtraction.extracted.filter((item) => item.accepted).length}
-                      </span>{' '}
-                      条可能的事实。
-                      {homeExtraction.extracted.some((item) => !item.accepted) ? (
-                        <span>
-                          {' '}
-                          另有 {homeExtraction.extracted.filter((item) => !item.accepted).length} 条未通过校验。
-                        </span>
-                      ) : null}{' '}
-                      <Link to={`/documents/${created.id}`} className="text-accent hover:underline">
-                        逐条确认 →
-                      </Link>
-                    </p>
-                  ) : (
-                    <p className="mt-3 rounded-md border border-line bg-canvas px-3 py-2">
-                      AI 未启用：{homeExtraction.note ?? '未配置 API Key。'}
-                    </p>
-                  )
+                {homeRun && homeCandidates.length > 0 ? (
+                  <p className="mt-3 rounded-md border border-line bg-canvas px-3 py-2">
+                    发现{' '}
+                    <span className="font-medium text-ink">
+                      {homeCandidates.filter((c) => c.status !== 'rejected').length}
+                    </span>{' '}
+                    条候选知识（
+                    {homeCandidates.filter((c) => c.status === 'pending').length} 条待确认）。
+                    <Link to={`/documents/${created.id}`} className="text-accent hover:underline">
+                      逐条确认 →
+                    </Link>
+                  </p>
                 ) : null}
+                {homeRun && homeRun.status === 'failed' ? null : null}
 
                 {analysis ? (
                   <p className="mt-2 rounded-md border border-line bg-canvas px-3 py-2">

@@ -25,8 +25,6 @@ import type {
   EntityCard,
   EntityDetail,
   EvidenceCard,
-  ExtractClaimsInput,
-  ExtractionReport,
   ExtractionRunDto,
   CandidateDto,
   ClaimTraceDto,
@@ -261,10 +259,6 @@ export function decide_claim_relation(
 // ---------------------------------------------------------------------------
 // 1.6 AI 抽取（Phase 5）
 // ---------------------------------------------------------------------------
-
-export function extract_claims(input: ExtractClaimsInput): Promise<ExtractionReport> {
-  return call<ExtractionReport>('extract_claims', input);
-}
 
 // ---------------------------------------------------------------------------
 // 1.6.1 Extraction Run（EXTRACTION-001：异步抽取后台任务）

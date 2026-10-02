@@ -380,10 +380,6 @@ export interface ReviewItem {
 // 1.6 AI 抽取（Phase 5）
 // ---------------------------------------------------------------------------
 
-export interface ExtractClaimsInput {
-  id: string;
-}
-
 export interface ExtractedClaim {
   subject: string;
   predicate: string;
