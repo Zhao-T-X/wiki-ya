@@ -1,29 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ErrorNotice } from '@/components/ErrorNotice';
-import { Spinner } from '@/components/ui/Spinner';
 import { SparkIcon } from '@/components/icons';
 import {
-  analyze_document,
   cancel_extraction,
-  create_claim,
+  decide_candidate,
   get_extraction_run,
+  list_candidates,
   list_extraction_runs,
   start_extraction,
   WikiError,
 } from '@/lib/api';
 import { useRunEvents } from '@/lib/useRunEvents';
-import { isTerminal, STATUS_LABEL, STAGE_LABEL } from '@/lib/extraction';
-import type {
-  CreateClaimInput,
-  ExtractedClaim,
-  RunEvent,
-  ExtractionReport,
-  ExtractionRunDto,
-} from '@/types/ipc';
+import { isTerminal, STAGE_LABEL } from '@/lib/extraction';
+import type { CandidateDto, RunEvent, ExtractionRunDto } from '@/types/ipc';
 
 interface ExtractionPanelProps {
   documentId: string;
@@ -31,42 +24,46 @@ interface ExtractionPanelProps {
   onClaimsAccepted: () => void;
 }
 
-function itemKey(item: ExtractedClaim): string {
-  return `${item.subject}|${item.predicate}|${item.sentence ?? ''}`;
-}
+/** 阶段顺序（与后端 ExtractionStage 枚举一致）。 */
+const STAGE_ORDER = [
+  'preparing',
+  'chunking',
+  'extracting',
+  'validating',
+  'comparing',
+  'finalizing',
+] as const;
 
 /**
- * AI 抽取面板（EXTRACTION-001：异步 Run 化）。
+ * AI 抽取面板（M7：真正可观察的过程 + 候选持久化）。
  *
- * 点击「分析知识」后**立即**拿到 `run_id` 返回，真正的抽取在后台跑；
- * 面板订阅 `extraction-events` 实时呈现阶段与进度，并持久化到数据库——
- * 页面关了 / 应用关了再回来都能续上（重开同文档会自动 resume 未结束的 Run）。
- *
- * 候选仍只预览、不擅自落库：用户逐条或批量「接受」后才走 `create_claim`
- * + `analyze_document`（复用 Review / Evolution 流程）。
+ * - 阶段时间线：Preparing ✓ → Chunking ✓ → Extracting ● 8/15 → … → Finalizing —
+ * - 候选一产生就持久化（M6）：终态后从 `candidates` 表读取，
+ *   逐条「接受」（→ Claim + 演化分析）或「拒绝」（留痕）；
+ * - 页面关了 / 应用关了再回来都能续上（自动 resume 未结束的 Run）。
  */
 export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPanelProps) {
   const [run, setRun] = useState<ExtractionRunDto | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
-  const [report, setReport] = useState<ExtractionReport | null>(null);
+  const [candidates, setCandidates] = useState<CandidateDto[]>([]);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<WikiError | null>(null);
-  const [accepted, setAccepted] = useState<string[]>([]);
-  const [accepting, setAccepting] = useState(false);
-  const pendingRef = useRef<Set<string>>(new Set());
-  const [pendingKeys, setPendingKeys] = useState<string[]>([]);
-  const acceptingRef = useRef(false);
+  const [deciding, setDeciding] = useState<string[]>([]);
 
-  const applyRun = useCallback((next: ExtractionRunDto) => {
-    setRun(next);
-    if (isTerminal(next.status) && next.resultJson) {
-      try {
-        setReport(JSON.parse(next.resultJson) as ExtractionReport);
-      } catch {
-        // 结果 JSON 损坏：忽略，保留进度状态，不让面板崩。
-      }
-    }
+  const refreshCandidates = useCallback((id: string) => {
+    list_candidates({ id }).then(setCandidates).catch(() => {});
   }, []);
+
+  const applyRun = useCallback(
+    (next: ExtractionRunDto) => {
+      setRun(next);
+      // 终态：候选已持久化，拉一次完整列表（替代旧的 result_json 解析）。
+      if (isTerminal(next.status)) {
+        refreshCandidates(next.id);
+      }
+    },
+    [refreshCandidates],
+  );
 
   const onEvent = useCallback(
     (event: RunEvent) => {
@@ -95,7 +92,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
             return prev;
         }
       });
-      // 终态事件：拉一次完整快照（带 result_json）并解析结果。
+      // 终态事件：拉完整快照 + 候选列表。
       if (
         event.kind === 'completed' ||
         event.kind === 'failed' ||
@@ -120,6 +117,15 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
         if (pending) {
           setRunId(pending.id);
           setRun(pending);
+        } else {
+          // 没有在跑的 Run：展示本文档最近一次终态 Run 的候选（若有）。
+          const last = runs.find(
+            (r) => r.documentId === documentId && isTerminal(r.status),
+          );
+          if (last) {
+            setRunId(last.id);
+            setRun(last);
+          }
         }
       })
       .catch(() => {});
@@ -143,8 +149,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   async function startRun() {
     setStarting(true);
     setError(null);
-    setReport(null);
-    setAccepted([]);
+    setCandidates([]);
     try {
       const id = await start_extraction({ id: documentId });
       setRunId(id);
@@ -164,64 +169,45 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
     }
   }
 
-  async function acceptItem(item: ExtractedClaim) {
-    const key = itemKey(item);
-    if (pendingRef.current.has(key) || accepted.includes(key)) {
+  async function decide(candidate: CandidateDto, accept: boolean) {
+    if (deciding.includes(candidate.id) || candidate.status !== 'pending') {
       return;
     }
-    pendingRef.current.add(key);
-    setPendingKeys([...pendingRef.current]);
-
-    const input: CreateClaimInput = {
-      subject: item.subject,
-      predicate: item.predicate,
-      object: item.objectText ?? null,
-      content: item.content ?? null,
-      claimType: item.claimType ?? 'factual',
-      polarity: item.polarity ?? 'positive',
-      modality: item.modality ?? 'asserted',
-      confidence: item.confidence ?? null,
-      documentId,
-      chunkId: null,
-      quote: item.sourceQuote ?? item.sentence ?? null,
-      status: 'candidate',
-    };
+    setDeciding((prev) => [...prev, candidate.id]);
     try {
-      await create_claim(input);
-      setAccepted((prev) => (prev.includes(key) ? prev : [...prev, key]));
-    } finally {
-      pendingRef.current.delete(key);
-      setPendingKeys([...pendingRef.current]);
-    }
-  }
-
-  async function acceptAll() {
-    if (!report || acceptingRef.current) {
-      return;
-    }
-    acceptingRef.current = true;
-    setAccepting(true);
-    setError(null);
-    try {
-      for (const item of report.extracted) {
-        if (item.accepted && !accepted.includes(itemKey(item))) {
-          await acceptItem(item);
-        }
+      const updated = await decide_candidate({
+        candidateId: candidate.id,
+        accept,
+      });
+      setCandidates((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c)),
+      );
+      if (accept) {
+        onClaimsAccepted();
       }
-      await analyze_document({ documentId });
-      onClaimsAccepted();
     } catch (cause: unknown) {
       setError(cause instanceof WikiError ? cause : new WikiError('INTERNAL_ERROR', String(cause)));
     } finally {
-      acceptingRef.current = false;
-      setAccepting(false);
+      setDeciding((prev) => prev.filter((id) => id !== candidate.id));
     }
   }
 
-  const acceptedSet = new Set(accepted);
-  const pendingSet = new Set(pendingKeys);
+  async function acceptAllPending() {
+    const pendingList = candidates.filter((c) => c.status === 'pending');
+    for (const candidate of pendingList) {
+      // 顺序执行：后端 accept 自带演化分析，且逐条更新 UI 状态。
+      await decide(candidate, true);
+    }
+  }
 
   const running = run ? !isTerminal(run.status) : false;
+  const pendingCount = candidates.filter((c) => c.status === 'pending').length;
+  const acceptedCount = candidates.filter((c) => c.status === 'accepted').length;
+  const rejectedCount = candidates.filter((c) => c.status === 'rejected').length;
+  const decidingSet = new Set(deciding);
+
+  // 阶段时间线：run.stage 之前的 ✓、当前 ●、之后的 —。
+  const stageIndex = run ? STAGE_ORDER.indexOf(run.stage as (typeof STAGE_ORDER)[number]) : -1;
 
   return (
     <section>
@@ -243,12 +229,23 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
 
       {run && running ? (
         <Card className="border-dashed border-line bg-surface/50 p-4">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Spinner className="h-3.5 w-3.5" />
-            <span>
-              {STATUS_LABEL[run.status] ?? run.status}
-              {run.stage ? ` · ${STAGE_LABEL[run.stage] ?? run.stage}` : ''}
-            </span>
+          {/* 阶段时间线（M7）：每个阶段 ✓ / ● / — 一眼可见 */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {STAGE_ORDER.map((stage, index) => {
+              const done = index < stageIndex || isTerminal(run.status);
+              const active = index === stageIndex && !isTerminal(run.status);
+              return (
+                <span
+                  key={stage}
+                  className={`flex items-center gap-1 text-[10px] ${
+                    active ? 'font-medium text-ink' : done ? 'text-muted' : 'text-muted/50'
+                  }`}
+                >
+                  {done ? '✓' : active ? '●' : '—'}
+                  {STAGE_LABEL[stage] ?? stage}
+                </span>
+              );
+            })}
           </div>
           {run.totalChunks > 0 ? (
             <div className="mt-3">
@@ -277,6 +274,12 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
       {run && run.status === 'failed' ? (
         <Card className="border-dashed border-line bg-surface/50 p-4 text-xs text-warn">
           {run.errorMessage ?? '抽取失败。'}
+          {run.processedChunks > 0 && run.totalChunks > 0 ? (
+            <span className="text-muted">
+              {' '}
+              （失败于 {run.processedChunks}/{run.totalChunks} 块；当前知识未受影响）
+            </span>
+          ) : null}
         </Card>
       ) : null}
 
@@ -286,79 +289,97 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
         </Card>
       ) : null}
 
-      {report && !report.enabled ? (
+      {run && run.status === 'cancelled' ? (
         <Card className="border-dashed border-line bg-surface/50 p-4 text-xs text-muted">
-          {report.note ?? 'AI 未启用。'}
+          已取消（{run.processedChunks}/{run.totalChunks} 块）。
         </Card>
       ) : null}
 
-      {report && report.enabled ? (
-        report.extracted.length === 0 ? (
-          <Card className="border-dashed border-line bg-surface/50 p-4 text-xs text-muted">
-            没有可抽取的 Claim（或模型判定本文无可结构化断言的内容）。
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted">
-                共 {report.extracted.filter((item) => item.accepted).length} 条通过校验，
-                {report.extracted.filter((item) => !item.accepted).length} 条已被排除
-                {run && run.changesFound > 0 ? ` · 约 ${run.changesFound} 条为新增` : ''}
-              </span>
+      {/* 候选列表（M6/M7：来自 candidates 表，状态持久化） */}
+      {candidates.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted">
+              {candidates.length} 条候选
+              {acceptedCount > 0 ? ` · 已接受 ${acceptedCount}` : ''}
+              {rejectedCount > 0 ? ` · 已拒绝 ${rejectedCount}` : ''}
+              {pendingCount > 0 ? ` · 待确认 ${pendingCount}` : ''}
+              {run && run.changesFound > 0 ? ` · 约 ${run.changesFound} 条为新增` : ''}
+            </span>
+            {pendingCount > 1 ? (
               <Button
                 size="sm"
                 variant="ghost"
-                loading={accepting}
-                onClick={acceptAll}
-                disabled={
-                  accepting ||
-                  report.extracted.every((item) => acceptedSet.has(itemKey(item)))
-                }
+                loading={deciding.length > 0}
+                onClick={acceptAllPending}
               >
                 全部接受
               </Button>
-            </div>
+            ) : null}
+          </div>
 
-            {report.extracted.map((item) => {
-              const key = itemKey(item);
-              const isAccepted = acceptedSet.has(key);
-              const isPending = pendingSet.has(key);
-              return (
-                <Card key={key} className="p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                        <span className="font-medium text-ink">{item.subject}</span>
-                        <Badge tone="accent">{item.predicate}</Badge>
-                        {item.objectText ? (
-                          <span className="text-muted">→ {item.objectText}</span>
-                        ) : null}
-                      </div>
-                      {item.content ? (
-                        <p className="text-[11px] leading-relaxed text-muted">{item.content}</p>
+          {candidates.map((candidate) => {
+            const isDeciding = decidingSet.has(candidate.id);
+            return (
+              <Card key={candidate.id} className="p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span className="font-medium text-ink">{candidate.subject}</span>
+                      <Badge tone="accent">{candidate.predicate}</Badge>
+                      {candidate.objectText ? (
+                        <span className="text-muted">→ {candidate.objectText}</span>
                       ) : null}
-                      {item.sentence ? (
-                        <p className="text-[10px] leading-relaxed text-muted/70">“{item.sentence}”</p>
-                      ) : null}
-                      {!item.accepted && item.rejectReason ? (
-                        <p className="text-[10px] text-warn">{item.rejectReason}</p>
+                      {candidate.status === 'accepted' ? (
+                        <Badge tone="ok">已接受</Badge>
+                      ) : candidate.status === 'rejected' ? (
+                        <Badge tone="warn">已拒绝</Badge>
                       ) : null}
                     </div>
-                    <Button
-                      size="sm"
-                      variant={isAccepted ? 'ghost' : 'secondary'}
-                      loading={isPending}
-                      disabled={!item.accepted || isAccepted || isPending || accepting}
-                      onClick={() => acceptItem(item)}
-                    >
-                      {isAccepted ? '已接受' : isPending ? '接受中' : '接受'}
-                    </Button>
+                    {candidate.content ? (
+                      <p className="text-[11px] leading-relaxed text-muted">{candidate.content}</p>
+                    ) : null}
+                    {candidate.sentence ? (
+                      <p className="text-[10px] leading-relaxed text-muted/70">
+                        “{candidate.sentence}”
+                      </p>
+                    ) : null}
+                    {candidate.rejectReason ? (
+                      <p className="text-[10px] text-warn">{candidate.rejectReason}</p>
+                    ) : null}
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-        )
+                  {candidate.status === 'pending' ? (
+                    <div className="flex shrink-0 gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={isDeciding}
+                        disabled={isDeciding}
+                        onClick={() => decide(candidate, true)}
+                      >
+                        接受
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={isDeciding}
+                        onClick={() => decide(candidate, false)}
+                      >
+                        拒绝
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {run && isTerminal(run.status) && run.status !== 'failed' && candidates.length === 0 ? (
+        <Card className="mt-3 border-dashed border-line bg-surface/50 p-4 text-xs text-muted">
+          没有可抽取的 Claim（或模型判定本文无可结构化断言的内容）。
+        </Card>
       ) : null}
     </section>
   );
