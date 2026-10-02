@@ -435,26 +435,6 @@ export interface ExtractionRunDto {
 }
 
 /** 后台运行实时事件（经 Tauri 频道 `extraction-events` 推送）。 */
-export interface ExtractionEvent {
-  type:
-    | 'started'
-    | 'stage_changed'
-    | 'progress'
-    | 'candidate_found'
-    | 'comparison_completed'
-    | 'completed'
-    | 'failed'
-    | 'cancelled';
-  runId: string;
-  documentId?: string;
-  stage?: string;
-  processed?: number;
-  total?: number;
-  count?: number;
-  changes?: number;
-  error?: string;
-}
-
 // ---------------------------------------------------------------------------
 // 1.9 统一 Run 事件（M1，频道 `run-events`）
 // ---------------------------------------------------------------------------
@@ -472,6 +452,34 @@ export type RunEvent =
   | { kind: 'completed'; runId: string }
   | { kind: 'failed'; runId: string; error: string }
   | { kind: 'cancelled'; runId: string };
+
+/** Agent Run 的一步工具调用明细（`agent_events` 行）。 */
+export interface AgentEventDto {
+  stepIndex: number;
+  name: string;
+  status: string;
+  inputSummary?: string;
+  outputText?: string;
+  errorMessage?: string;
+  createdAt: string;
+}
+
+/** 一次 Run 的完整可追溯视图（M1）。 */
+export interface RunTraceDto {
+  id: string;
+  parentRunId?: string;
+  runType: string;
+  actor: string;
+  status: string;
+  stage: string;
+  startedAt: string;
+  finishedAt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  metadata: unknown;
+  agentSteps: AgentEventDto[];
+  extractionRun?: ExtractionRunDto;
+}
 
 // ---------------------------------------------------------------------------
 // 1.7 Ask 问答（Phase 6）

@@ -15,12 +15,12 @@ import {
   start_extraction,
   WikiError,
 } from '@/lib/api';
-import { useExtractionEvents } from '@/lib/useExtractionEvents';
+import { useRunEvents } from '@/lib/useRunEvents';
 import { isTerminal, STATUS_LABEL, STAGE_LABEL } from '@/lib/extraction';
 import type {
   CreateClaimInput,
   ExtractedClaim,
-  ExtractionEvent,
+  RunEvent,
   ExtractionReport,
   ExtractionRunDto,
 } from '@/types/ipc';
@@ -69,13 +69,13 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   }, []);
 
   const onEvent = useCallback(
-    (event: ExtractionEvent) => {
+    (event: RunEvent) => {
       setRun((prev) => {
         if (!prev) return prev;
-        switch (event.type) {
+        switch (event.kind) {
           case 'started':
             return { ...prev, status: 'running' };
-          case 'stage_changed':
+          case 'stageChanged':
             return { ...prev, stage: event.stage ?? prev.stage };
           case 'progress':
             return {
@@ -83,10 +83,8 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
               processedChunks: event.processed ?? prev.processedChunks,
               totalChunks: event.total ?? prev.totalChunks,
             };
-          case 'candidate_found':
+          case 'candidateCreated':
             return { ...prev, candidatesFound: event.count ?? prev.candidatesFound };
-          case 'comparison_completed':
-            return { ...prev, changesFound: event.changes ?? prev.changesFound };
           case 'completed':
             return { ...prev, status: 'completed' };
           case 'failed':
@@ -99,9 +97,9 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
       });
       // 终态事件：拉一次完整快照（带 result_json）并解析结果。
       if (
-        event.type === 'completed' ||
-        event.type === 'failed' ||
-        event.type === 'cancelled'
+        event.kind === 'completed' ||
+        event.kind === 'failed' ||
+        event.kind === 'cancelled'
       ) {
         get_extraction_run({ id: event.runId }).then(applyRun).catch(() => {});
       }
@@ -109,7 +107,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
     [applyRun],
   );
 
-  useExtractionEvents(runId, onEvent);
+  useRunEvents(runId, onEvent);
 
   // 初次进入 / 切换文档：自动 resume 本文档仍在跑的 Run（页面关了再回来也能续上）。
   useEffect(() => {

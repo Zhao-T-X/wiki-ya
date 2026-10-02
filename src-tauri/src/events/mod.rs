@@ -1,21 +1,10 @@
-//! 事件总线（TDD §53/§84）。
+//! 事件层（TDD §53）。
 //!
-//! `AppEvent` 同时服务于：UI 流式更新、Run Trace、调试与审计。
-//! 因此事件名是**对外契约**，一旦发布不得改名，只能新增。
+//! M1 收尾后只保留统一 [`RunEvent`]：任何类型的 Run（extraction / agent /
+//! ask / 未来的 skill）都发同一组事件到单一 Tauri 频道 `run-events`。
+//! 旧的 `AppEvent`（agent-events）与 `ExtractionEvent`（extraction-events）
+//! 已退役——它们的双频道双枚举是本次统一要消除的割裂。
 
-pub mod app_event;
-pub mod extraction_event;
 pub mod run_event;
 
-pub use app_event::AppEvent;
-pub use extraction_event::{ExtractionEvent, ExtractionSink};
 pub use run_event::{RunEvent, RunSink};
-
-use std::sync::Arc;
-
-/// 事件接收端（TDD §53）。
-///
-/// 由 Commands 层注入：Tauri 命令把它接到 `AppHandle::emit`（推前端），
-/// 测试可以把它接到收集器，审计可以接到落盘。Service / Runtime 只依赖
-/// 这个函数指针，不感知 Tauri。
-pub type EventSink = Arc<dyn Fn(&AppEvent) + Send + Sync>;

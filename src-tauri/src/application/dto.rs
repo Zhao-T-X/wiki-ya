@@ -718,3 +718,41 @@ pub struct MigrationReport {
 pub struct MigrationInput {
     pub source_path: String,
 }
+
+// ---------------------------------------------------------------------------
+// Run Trace（M1：Run → Skill → Tool → Result → Trace）
+// ---------------------------------------------------------------------------
+
+/// Agent Run 的一步工具调用明细（来自 `agent_events`）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEventDto {
+    pub step_index: i64,
+    pub name: String,
+    pub status: String,
+    pub input_summary: Option<String>,
+    pub output_text: Option<String>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+}
+
+/// 一次 Run 的完整可追溯视图：统一登记 + 类型相关明细。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunTraceDto {
+    pub id: String,
+    pub parent_run_id: Option<String>,
+    pub run_type: String,
+    pub actor: String,
+    pub status: String,
+    pub stage: String,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub metadata: serde_json::Value,
+    /// `run_type = agent` 时的工具调用步骤（按 step_index 升序）。
+    pub agent_steps: Vec<AgentEventDto>,
+    /// `run_type = extraction` 时的抽取明细快照。
+    pub extraction_run: Option<ExtractionRunDto>,
+}

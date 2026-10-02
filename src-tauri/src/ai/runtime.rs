@@ -18,7 +18,7 @@ use crate::ai::config::AiConfig;
 use crate::ai::provider::{default_provider, CompletionRequest};
 use crate::ai::tools::{self, ToolOutput, ToolName};
 use crate::error::{AppError, AppResult};
-use crate::events::{AppEvent, EventSink, RunEvent, RunSink};
+use crate::events::{RunEvent, RunSink};
 use crate::infrastructure::telemetry_repository;
 
 /// 循环轮数上限：防止工具调用无限循环烧 token。
@@ -56,7 +56,6 @@ pub fn run(
     role: AgentRole,
     goal: &str,
     run_id: &str,
-    sink: Option<&EventSink>,
     run_sink: Option<&RunSink>,
 ) -> AppResult<AgentRun> {
     // Run Trace（TDD §79）：agent_runs/agent_events 落库，可回放、可审计。
@@ -69,7 +68,7 @@ pub fn run(
     )?;
     let started = std::time::Instant::now();
 
-    match run_inner(conn, role, goal, run_id, sink, run_sink, &agent_run_id) {
+    match run_inner(conn, role, goal, run_id, run_sink, &agent_run_id) {
         Ok(run) => {
             let _ = telemetry_repository::finish_agent_run(
                 conn,
@@ -103,7 +102,6 @@ fn run_inner(
     role: AgentRole,
     goal: &str,
     run_id: &str,
-    sink: Option<&EventSink>,
     run_sink: Option<&RunSink>,
     agent_run_id: &str,
 ) -> AppResult<AgentRun> {
@@ -112,21 +110,12 @@ fn run_inner(
         return Err(AppError::Internal("AI 未启用：未配置 API Key。".into()));
     }
 
-    let notify = |event: AppEvent| {
-        if let Some(sink) = sink {
-            sink(&event);
-        }
-    };
-    // 统一 Run 事件镜像（M1）：单一频道，过渡期与 AppEvent 并存。
+    // 统一 Run 事件（M1 收尾后唯一事件出口）。
     let notify_run = |event: RunEvent| {
         if let Some(run_sink) = run_sink {
             run_sink(&event);
         }
     };
-    notify(AppEvent::AgentStarted {
-        run_id: run_id.to_string(),
-        agent: format!("{role:?}"),
-    });
     notify_run(RunEvent::Started {
         run_id: run_id.to_string(),
         run_type: crate::domain::run::RunType::Agent,
@@ -143,18 +132,9 @@ fn run_inner(
             ""
         };
 
-        notify(AppEvent::AgentThinking {
-            run_id: run_id.to_string(),
-            text: String::new(),
-        });
-
         let request = CompletionRequest::chat(system.clone(), format!("{user}{final_hint}"));
         let stream_run_id = run_id.to_string();
         let response = provider.complete_streaming(&request, &|delta| {
-            notify(AppEvent::TokenDelta {
-                run_id: stream_run_id.clone(),
-                delta: delta.to_string(),
-            });
             notify_run(RunEvent::TokenDelta {
                 run_id: stream_run_id.clone(),
                 delta: delta.to_string(),
@@ -164,10 +144,6 @@ fn run_inner(
 
         match action {
             Action::Final { answer } => {
-                notify(AppEvent::AgentFinished {
-                    run_id: run_id.to_string(),
-                    status: "success".into(),
-                });
                 notify_run(RunEvent::Completed {
                     run_id: run_id.to_string(),
                 });
@@ -178,11 +154,6 @@ fn run_inner(
                 });
             }
             Action::Tool { tool, args } => {
-                notify(AppEvent::ToolCalled {
-                    run_id: run_id.to_string(),
-                    tool: tool.clone(),
-                    arguments: args.clone(),
-                });
                 notify_run(RunEvent::ToolCalled {
                     run_id: run_id.to_string(),
                     tool: tool.clone(),
@@ -212,12 +183,6 @@ fn run_inner(
                     args,
                     summary: summary.clone(),
                 });
-                notify(AppEvent::ToolCompleted {
-                    run_id: run_id.to_string(),
-                    tool: tool.clone(),
-                    ok,
-                    summary: summary.clone(),
-                });
                 notify_run(RunEvent::ToolCompleted {
                     run_id: run_id.to_string(),
                     tool: tool.clone(),
@@ -232,10 +197,6 @@ fn run_inner(
         }
     }
 
-    notify(AppEvent::AgentFinished {
-        run_id: run_id.to_string(),
-        status: "failed".into(),
-    });
     notify_run(RunEvent::Failed {
         run_id: run_id.to_string(),
         error: format!("Agent 在 {MAX_ROUNDS} 轮内未给出最终答案"),

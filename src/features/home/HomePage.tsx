@@ -26,14 +26,14 @@ import {
 } from '@/lib/api';
 import { formatChars } from '@/lib/format';
 import { useAsyncData } from '@/lib/hooks';
-import { useExtractionEvents } from '@/lib/useExtractionEvents';
+import { useRunEvents } from '@/lib/useRunEvents';
 import { relationshipLabel } from '@/lib/status';
 import { isTerminal, STAGE_LABEL, STATUS_LABEL } from '@/lib/extraction';
 import { useEffect, useCallback } from 'react';
 import type {
   AnalysisReport,
   DocumentSummary,
-  ExtractionEvent,
+  RunEvent,
   ExtractionReport,
   ExtractionRunDto,
 } from '@/types/ipc';
@@ -155,11 +155,11 @@ export function HomePage() {
   }, [runs]);
 
   const onHomeEvent = useCallback(
-    (event: ExtractionEvent) => {
+    (event: RunEvent) => {
       setHomeRun((prev) => {
         if (!prev) return prev;
-        switch (event.type) {
-          case 'stage_changed':
+        switch (event.kind) {
+          case 'stageChanged':
             return { ...prev, stage: event.stage ?? prev.stage };
           case 'progress':
             return {
@@ -167,10 +167,8 @@ export function HomePage() {
               processedChunks: event.processed ?? prev.processedChunks,
               totalChunks: event.total ?? prev.totalChunks,
             };
-          case 'candidate_found':
+          case 'candidateCreated':
             return { ...prev, candidatesFound: event.count ?? prev.candidatesFound };
-          case 'comparison_completed':
-            return { ...prev, changesFound: event.changes ?? prev.changesFound };
           case 'completed':
             return { ...prev, status: 'completed' };
           case 'failed':
@@ -182,9 +180,9 @@ export function HomePage() {
         }
       });
       if (
-        event.type === 'completed' ||
-        event.type === 'failed' ||
-        event.type === 'cancelled'
+        event.kind === 'completed' ||
+        event.kind === 'failed' ||
+        event.kind === 'cancelled'
       ) {
         get_extraction_run({ id: event.runId }).then(applyHomeRun).catch(() => {});
       }
@@ -192,7 +190,7 @@ export function HomePage() {
     [applyHomeRun],
   );
 
-  useExtractionEvents(homeRunId, onHomeEvent);
+  useRunEvents(homeRunId, onHomeEvent);
 
   useEffect(() => {
     if (!homeRunId) return;

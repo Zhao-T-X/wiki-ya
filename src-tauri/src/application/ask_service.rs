@@ -18,7 +18,7 @@ use crate::application::dto::{AskRequest, AskResponse, AskSource};
 use crate::application::retrieval_service::retrieve;
 use crate::domain::ontology::registry;
 use crate::error::AppResult;
-use crate::events::{AppEvent, EventSink, RunEvent, RunSink};
+use crate::events::{RunEvent, RunSink};
 use crate::infrastructure::{db, telemetry_repository};
 
 /// 进入编排前的检索候选上限。
@@ -27,7 +27,6 @@ const RETRIEVE_LIMIT: usize = 15;
 pub fn ask(
     conn: &Connection,
     request: AskRequest,
-    sink: Option<&EventSink>,
     run_sink: Option<&RunSink>,
 ) -> AppResult<AskResponse> {
     let config = AiConfig::from_settings(conn);
@@ -45,12 +44,7 @@ pub fn ask(
         });
     }
 
-    let notify = |event: AppEvent| {
-        if let Some(sink) = sink {
-            sink(&event);
-        }
-    };
-    // 统一 Run 事件镜像（M1）：Ask 的可见过程只有流式增量。
+    // 统一 Run 事件（M1）：Ask 的可见过程只有流式增量。
     let notify_run = |event: RunEvent| {
         if let Some(run_sink) = run_sink {
             run_sink(&event);
@@ -78,9 +72,9 @@ pub fn ask(
     let run_id = request.run_id.clone().unwrap_or_default();
 
     if !run_id.is_empty() {
-        notify(AppEvent::AgentStarted {
+        notify_run(RunEvent::Started {
             run_id: run_id.clone(),
-            agent: role_name.into(),
+            run_type: crate::domain::run::RunType::Agent,
         });
     }
 
@@ -178,10 +172,6 @@ pub fn ask(
     } else {
         let stream_run_id = run_id.clone();
         provider.complete_streaming(&completion, &|delta| {
-            notify(AppEvent::TokenDelta {
-                run_id: stream_run_id.clone(),
-                delta: delta.to_string(),
-            });
             notify_run(RunEvent::TokenDelta {
                 run_id: stream_run_id.clone(),
                 delta: delta.to_string(),
@@ -202,9 +192,9 @@ pub fn ask(
                 started.elapsed().as_millis() as i64,
             );
             if !run_id.is_empty() {
-                notify(AppEvent::AgentFinished {
+                notify_run(RunEvent::Failed {
                     run_id: run_id.clone(),
-                    status: "failed".into(),
+                    error: err.to_string(),
                 });
             }
             return Err(err);
@@ -239,10 +229,7 @@ pub fn ask(
         started.elapsed().as_millis() as i64,
     );
     if !run_id.is_empty() {
-        notify(AppEvent::AgentFinished {
-            run_id,
-            status: "success".into(),
-        });
+        notify_run(RunEvent::Completed { run_id });
     }
 
     Ok(AskResponse {

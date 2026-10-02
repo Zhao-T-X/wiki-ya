@@ -129,6 +129,8 @@ pub fn run() {
             commands::extraction::get_extraction_run,
             commands::extraction::list_extraction_runs,
             commands::extraction::cancel_extraction,
+            // ---- run trace（M1）----
+            commands::trace::get_run_trace,
             // ---- ask（Phase 6 问答）----
             commands::ask::ask,
             // ---- research（Phase 6 多步研究）----

@@ -26,7 +26,7 @@ use crate::domain::extraction::{ExtractionRun, ExtractionRunStatus, ExtractionSt
 use crate::domain::knowledge::claim::ClaimObject;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
-use crate::events::{ExtractionEvent, ExtractionSink, RunEvent, RunSink};
+use crate::events::{RunEvent, RunSink};
 use crate::infrastructure::{
     claim_repository, db, document_repository, extraction_run_repository, run_repository,
 };
@@ -111,11 +111,7 @@ pub fn recover_interrupted_runs(conn: &Connection) -> AppResult<usize> {
 pub async fn execute(app: AppHandle, db_path: PathBuf, run_id: String) {
     // 事件经 Tauri 全局频道 `extraction-events` 推前端。sink 持有 AppHandle 克隆，
     // 与 commands 层解耦（Service 不依赖 Commands）。
-    let emitter = app.clone();
-    let sink: ExtractionSink = std::sync::Arc::new(move |event: &ExtractionEvent| {
-        let _ = emitter.emit("extraction-events", event);
-    });
-    // 统一 Run 事件（M1）：单一 run-events 频道，过渡期与旧频道并存。
+        // 统一 Run 事件（M1）：单一 run-events 频道，过渡期与旧频道并存。
     let run_emitter = app.clone();
     let run_events: RunSink = std::sync::Arc::new(move |event: &RunEvent| {
         let _ = run_emitter.emit("run-events", event);
@@ -124,7 +120,7 @@ pub async fn execute(app: AppHandle, db_path: PathBuf, run_id: String) {
     let db_path_for_task = db_path.clone();
     let run_id_for_task = run_id.clone();
     let join = tauri::async_runtime::spawn_blocking(move || {
-        run_pipeline(&db_path_for_task, &run_id_for_task, &sink, &run_events)
+        run_pipeline(&db_path_for_task, &run_id_for_task, &run_events)
     })
     .await;
 
@@ -161,7 +157,7 @@ fn mark_failed(db_path: &PathBuf, run_id: &str, err: &AppError) {
     }
 }
 
-fn to_dto(run: &ExtractionRun) -> ExtractionRunDto {
+pub(crate) fn to_dto(run: &ExtractionRun) -> ExtractionRunDto {
     ExtractionRunDto {
         id: run.id.clone(),
         document_id: run.document_id.clone(),
@@ -183,7 +179,6 @@ fn to_dto(run: &ExtractionRun) -> ExtractionRunDto {
 fn run_pipeline(
     db_path: &PathBuf,
     run_id: &str,
-    sink: &ExtractionSink,
     run_sink: &RunSink,
 ) -> AppResult<()> {
     let conn = db::open(db_path)?;
@@ -195,10 +190,6 @@ fn run_pipeline(
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Preparing)?;
     run_repository::set_status(&conn, run_id, ExtractionRunStatus::Running)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Preparing.as_str())?;
-    sink(&ExtractionEvent::Started {
-        run_id: run_id.to_string(),
-        document_id: document_id.clone(),
-    });
     run_sink(&RunEvent::Started {
         run_id: run_id.to_string(),
         run_type: RunType::Extraction,
@@ -215,10 +206,6 @@ fn run_pipeline(
     let chunks = document_repository::list_chunks(&conn, &doc_id)?;
     let total = chunks.len();
     extraction_run_repository::set_progress(&conn, run_id, 0, total as i64)?;
-    sink(&ExtractionEvent::StageChanged {
-        run_id: run_id.to_string(),
-        stage: ExtractionStage::Chunking,
-    });
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),
         stage: ExtractionStage::Chunking.as_str().to_string(),
@@ -247,19 +234,12 @@ fn run_pipeline(
             None,
             None,
         )?;
-        sink(&ExtractionEvent::Completed {
-            run_id: run_id.to_string(),
-        });
-        return Ok(());
+            return Ok(());
     }
 
     // ---- Extracting（分批）----
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Extracting)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Extracting.as_str())?;
-    sink(&ExtractionEvent::StageChanged {
-        run_id: run_id.to_string(),
-        stage: ExtractionStage::Extracting,
-    });
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),
         stage: ExtractionStage::Extracting.as_str().to_string(),
@@ -273,10 +253,7 @@ fn run_pipeline(
         // 批与批之间检查取消：用户点了取消就礼貌停下（先完成当前请求）。
         let current = extraction_run_repository::get(&conn, run_id)?;
         if current.status == ExtractionRunStatus::Cancelled {
-            sink(&ExtractionEvent::Cancelled {
-                run_id: run_id.to_string(),
-            });
-            run_sink(&RunEvent::Cancelled {
+                    run_sink(&RunEvent::Cancelled {
                 run_id: run_id.to_string(),
             });
             return Ok(());
@@ -292,21 +269,12 @@ fn run_pipeline(
         all.extend(batch_claims);
         processed += batch.len();
         extraction_run_repository::set_progress(&conn, run_id, processed as i64, total as i64)?;
-        sink(&ExtractionEvent::Progress {
-            run_id: run_id.to_string(),
-            processed,
-            total,
-        });
-        run_sink(&RunEvent::Progress {
+            run_sink(&RunEvent::Progress {
             run_id: run_id.to_string(),
             processed,
             total,
         });
     }
-    sink(&ExtractionEvent::CandidateFound {
-        run_id: run_id.to_string(),
-        count: all.len(),
-    });
     run_sink(&RunEvent::CandidateCreated {
         run_id: run_id.to_string(),
         count: all.len(),
@@ -315,10 +283,6 @@ fn run_pipeline(
     // ---- Validating ----
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Validating)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Validating.as_str())?;
-    sink(&ExtractionEvent::StageChanged {
-        run_id: run_id.to_string(),
-        stage: ExtractionStage::Validating,
-    });
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),
         stage: ExtractionStage::Validating.as_str().to_string(),
@@ -329,10 +293,6 @@ fn run_pipeline(
     // ---- Comparing（相对库内已有知识去重，估算"变更数"）----
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Comparing)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Comparing.as_str())?;
-    sink(&ExtractionEvent::StageChanged {
-        run_id: run_id.to_string(),
-        stage: ExtractionStage::Comparing,
-    });
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),
         stage: ExtractionStage::Comparing.as_str().to_string(),
@@ -340,18 +300,10 @@ fn run_pipeline(
     let duplicates = count_duplicates(&conn, &document_id, &accepted);
     let changes = (accepted.len().saturating_sub(duplicates)) as i64;
     extraction_run_repository::set_counts(&conn, run_id, candidates_found, changes)?;
-    sink(&ExtractionEvent::ComparisonCompleted {
-        run_id: run_id.to_string(),
-        changes: changes as usize,
-    });
 
     // ---- Finalizing ----
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Finalizing)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Finalizing.as_str())?;
-    sink(&ExtractionEvent::StageChanged {
-        run_id: run_id.to_string(),
-        stage: ExtractionStage::Finalizing,
-    });
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),
         stage: ExtractionStage::Finalizing.as_str().to_string(),
@@ -373,9 +325,6 @@ fn run_pipeline(
         None,
     )?;
     run_repository::finish(&conn, run_id, ExtractionRunStatus::Completed, None, None)?;
-    sink(&ExtractionEvent::Completed {
-        run_id: run_id.to_string(),
-    });
     run_sink(&RunEvent::Completed {
         run_id: run_id.to_string(),
     });

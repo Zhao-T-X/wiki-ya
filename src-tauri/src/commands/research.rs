@@ -28,7 +28,6 @@ pub fn start_research(
     input: StartResearchInput,
 ) -> Result<ResearchReport, AppError> {
     let conn = state.open()?;
-    let sink = super::agent_sink(&app, input.run_id.is_some());
     let run_events = super::run_sink(&app);
-    research_service::start_research(&conn, input, sink.as_ref(), Some(&run_events))
+    research_service::start_research(&conn, input, Some(&run_events))
 }

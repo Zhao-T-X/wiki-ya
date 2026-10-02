@@ -16,38 +16,14 @@ pub mod review;
 pub mod search;
 pub mod settings;
 pub mod timeline;
+pub mod trace;
 
 use std::sync::Arc;
 
 use tauri::Emitter;
 
-/// 构造 Agent 事件发射器（TDD §53）：把事件经 Tauri 全局 channel
-/// `agent-events` 推给前端。`enabled=false`（前端没带 runId）时返回
-/// `None`，Service 静默运行、零开销。
-pub fn agent_sink(app: &tauri::AppHandle, enabled: bool) -> Option<crate::events::EventSink> {
-    if !enabled {
-        return None;
-    }
-    let app = app.clone();
-    Some(Arc::new(move |event| {
-        let _ = app.emit("agent-events", event);
-    }))
-}
-
-/// 构造 Extraction 事件发射器（EXTRACTION-001）：把事件经 Tauri 全局
-/// channel `extraction-events` 推给前端，供 UI 实时展示进度。
-///
-/// 与 `agent_sink` 不同，这里始终返回有效 sink——进度推送是 Run 的核心价值，
-/// 不需要"关闭"开关。
-pub fn extraction_sink(app: &tauri::AppHandle) -> crate::events::ExtractionSink {
-    let app = app.clone();
-    Arc::new(move |event| {
-        let _ = app.emit("extraction-events", event);
-    })
-}
-
 /// 构造统一 Run 事件发射器（M1）：任何类型的 Run 都发到单一频道
-/// `run-events`，前端一个订阅即可看到全部活动（过渡期旧频道保留）。
+/// `run-events`，前端一个订阅即可看到全部活动。
 pub fn run_sink(app: &tauri::AppHandle) -> crate::events::RunSink {
     let app = app.clone();
     Arc::new(move |event| {

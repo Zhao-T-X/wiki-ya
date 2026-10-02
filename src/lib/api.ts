@@ -28,6 +28,7 @@ import type {
   ExtractClaimsInput,
   ExtractionReport,
   ExtractionRunDto,
+  RunTraceDto,
   AskRequest,
   AskResponse,
   AiSettings,
@@ -271,6 +272,11 @@ export function start_extraction(input: { id: string }): Promise<string> {
 
 export function get_extraction_run(input: { id: string }): Promise<ExtractionRunDto> {
   return call<ExtractionRunDto>('get_extraction_run', input);
+}
+
+/** 读取一条 Run 的完整 Trace（M1：登记 + 类型相关明细）。 */
+export function get_run_trace(input: { id: string }): Promise<RunTraceDto> {
+  return call<RunTraceDto>('get_run_trace', input);
 }
 
 export function list_extraction_runs(input?: { limit?: number }): Promise<ExtractionRunDto[]> {

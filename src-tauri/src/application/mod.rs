@@ -21,3 +21,4 @@ pub mod retrieval_service;
 pub mod search_service;
 pub mod settings_service;
 pub mod timeline_service;
+pub mod trace_service;
