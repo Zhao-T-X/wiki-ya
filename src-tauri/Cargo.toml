@@ -9,7 +9,7 @@ edition = "2021"
 default-run = "wiki-ya"
 # MSRV 与本机工具链保持一致：resolver = "3" 会据此挑选兼容的依赖版本，
 # 否则 Tauri 的传递依赖（time / icu / serde_with 等）会要求 rustc 1.88+。
-rust-version = "1.86"
+rust-version = "1.88"
 
 [workspace]
 # resolver = "3" 启用 MSRV 感知的依赖解析：选版本时优先满足 rust-version，

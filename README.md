@@ -173,14 +173,47 @@ src-tauri/
 
 ---
 
+## 第二阶段：统一知识生产系统（M0-M14）
+
+在上述架构之上，第二阶段把各能力连成**可追溯的闭环**：
+
+```text
+Capture → Extraction Run（异步，逐批留痕）
+  → Candidate（一产生就持久化，pending/accepted/rejected）
+  → Review（人类决策）
+  → Claim（supersedes 可回滚）
+  → Claim Trace（反向溯源：候选 → Run → skill@version → 原文切片）
+```
+
+核心机制：
+
+- **统一 Run**（`runs` 表）：Extraction / Agent / Skill / Ask 共用一套
+  身份与生命周期（`parent_run_id` 形成 Agent → Skill Run 树）；
+  `RunEvent` 单一频道 `run-events` 实时推送。
+- **Skill Runtime**：3 个内置 Skill（extraction / answering / correction）
+  + 用户自定义（SKILL.md 语义，`skills`/`skill_versions` 版本化，
+  Run actor 记录 `skill@version`）。自定义 Skill 强制只读；
+  PROPOSE 型产出的候选必须通过与 AI 抽取**完全相同**的受控词表校验。
+- **Agent Profile**：Agent = 名字 + Skills + Policy（上限 propose），
+  按声明顺序编排 Skill Run；**结构上拿不到 MUTATE**——
+  改知识永远经人类 Review（枚举级约束 + 测试固化）。
+- **Agent 底座 = Rig**（`ai/rig_adapter.rs` 唯一隔离点）：
+  rig-core 0.42 负责模型调用与流式；wiki-ya 保留 Skill / Policy /
+  Trace / Knowledge 全部领域层。Legacy 自研 runtime 保留为
+  Golden 对比基线（`golden_legacy_vs_rig` 测试）。
+- **流式专用端点记忆**：推理端点（如 deepseek-flash）非流式恒为
+  空体时自动标记并转流式，省去每次约 2 分钟的无效重试。
+
+---
+
 ## 开发说明
 
 - `src-tauri/.cargo/config.toml` 把 crates-io 指向 USTC 的 **sparse** 索引。
   本机全局 `~/.cargo/config` 用的是已废弃的 `git://` 协议，在当前网络下无法解析依赖。
   修好全局配置后可以直接删除该文件。
-- `Cargo.toml` 里 `rust-version = "1.86"` 与 `resolver = "3"` 是必需的：
-  Tauri 的部分传递依赖（`time` / `icu` / `serde_with` 等）会要求 rustc 1.88+，
-  MSRV 感知解析会把它们锁到兼容版本。**不要随意删除这两行**。
+- `Cargo.toml` 里 `rust-version = "1.88"` 与 `resolver = "3"` 是必需的：
+  **rig-core 0.42 使用 let-chains 语法，要求 rustc ≥ 1.88**（且上游不声明
+  MSRV）；Tauri 的部分传递依赖同样要求 1.88+。**不要降低这个版本**。
 - 所有受控枚举的取值必须与 `registries/*.json` 逐字一致：
   启动时 `registry::self_check()` 会断言这一点，不一致直接启动失败。
 - 数据库校验用 `PRAGMA integrity_check` / `foreign_key_check`；
