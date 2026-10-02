@@ -905,3 +905,20 @@ pub struct UpdateSkillInput {
     pub description: String,
     pub instructions: String,
 }
+
+/// 创建/更新 Agent Profile（M12）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProfileInput {
+    pub name: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub policy: Vec<String>,
+    #[serde(default)]
+    pub system_prompt: String,
+}

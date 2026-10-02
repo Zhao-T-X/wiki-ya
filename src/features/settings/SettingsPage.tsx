@@ -19,6 +19,7 @@ import {
   WikiError,
 } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { AgentManagerPanel } from '@/features/settings/AgentManagerPanel';
 import { useAsyncData } from '@/lib/hooks';
 import type { Tone } from '@/lib/status';
 import { useUiStore } from '@/stores/ui';
@@ -514,6 +515,13 @@ export function SettingsPage() {
             </Card>
           ) : null}
         </details>
+      </section>
+
+      <section>
+        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Agents（M12）
+        </h3>
+        <AgentManagerPanel />
       </section>
     </div>
   );

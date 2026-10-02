@@ -5,7 +5,8 @@
 use tauri::State;
 
 use crate::application::agent_profile_service;
-use crate::application::dto::RunAgentProfileInput;
+use crate::application::agent_profile_crud;
+use crate::application::dto::{AgentProfileInput, IdInput, RunAgentProfileInput};
 use crate::domain::agent_profile::AgentProfile;
 use crate::error::AppError;
 use crate::AppState;
@@ -33,4 +34,48 @@ pub async fn run_agent_profile(
         &input.name,
         input.input,
     )
+}
+
+/// 创建 Agent Profile（M12：policy 上限 propose，结构上拿不到 MUTATE）。
+#[tauri::command]
+pub fn create_agent_profile(
+    state: State<'_, AppState>,
+    input: AgentProfileInput,
+) -> Result<(), AppError> {
+    let mut conn = state.open()?;
+    agent_profile_crud::create_profile(&mut conn, &input.into())
+}
+
+/// 更新 Agent Profile（整体替换字段）。
+#[tauri::command]
+pub fn update_agent_profile(
+    state: State<'_, AppState>,
+    input: AgentProfileInput,
+) -> Result<(), AppError> {
+    let mut conn = state.open()?;
+    agent_profile_crud::update_profile(&mut conn, &input.into())
+}
+
+/// 删除 Agent Profile（默认 Profile 不可删除，重启会恢复出厂预置）。
+#[tauri::command]
+pub fn delete_agent_profile(state: State<'_, AppState>, input: IdInput) -> Result<(), AppError> {
+    let conn = state.open()?;
+    agent_profile_crud::delete_profile(&conn, &input.id)
+}
+
+impl From<AgentProfileInput> for crate::domain::agent_profile::AgentProfile {
+    fn from(input: AgentProfileInput) -> Self {
+        crate::domain::agent_profile::AgentProfile {
+            name: input.name.trim().to_string(),
+            display_name: if input.display_name.trim().is_empty() {
+                input.name.trim().to_string()
+            } else {
+                input.display_name.trim().to_string()
+            },
+            model: input.model.trim().to_string(),
+            skills: input.skills,
+            policy: input.policy,
+            system_prompt: input.system_prompt,
+        }
+    }
 }

@@ -367,3 +367,30 @@ export function update_skill(input: {
 export function delete_skill(input: { id: string }): Promise<void> {
   return call<void>('delete_skill', input);
 }
+
+/** 创建 Agent Profile（M12：policy 上限 propose）。 */
+export function create_agent_profile(input: {
+  name: string;
+  displayName?: string;
+  model?: string;
+  skills: string[];
+  policy: string[];
+}): Promise<void> {
+  return call<void>('create_agent_profile', input);
+}
+
+/** 更新 Agent Profile（整体替换字段）。 */
+export function update_agent_profile(input: {
+  name: string;
+  displayName?: string;
+  model?: string;
+  skills: string[];
+  policy: string[];
+}): Promise<void> {
+  return call<void>('update_agent_profile', input);
+}
+
+/** 删除 Agent Profile（默认 Profile 不可删除）。 */
+export function delete_agent_profile(input: { id: string }): Promise<void> {
+  return call<void>('delete_agent_profile', input);
+}

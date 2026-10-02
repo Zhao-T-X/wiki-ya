@@ -153,6 +153,9 @@ pub fn run() {
             // ---- agent profile（M4）----
             commands::agent_profile::list_agent_profiles,
             commands::agent_profile::run_agent_profile,
+            commands::agent_profile::create_agent_profile,
+            commands::agent_profile::update_agent_profile,
+            commands::agent_profile::delete_agent_profile,
             // ---- ask（Phase 6 问答）----
             commands::ask::ask,
             // ---- research（Phase 6 多步研究）----
