@@ -21,5 +21,6 @@ pub mod agents;
 pub mod config;
 pub mod context;
 pub mod provider;
+pub mod rig_adapter;
 pub mod runtime;
 pub mod tools;
