@@ -98,7 +98,11 @@ fn matched_fields(term_list: &[String], fields: &[(&str, &str)]) -> Vec<String> 
     let mut hits: Vec<String> = Vec::new();
     for (name, value) in fields {
         let haystack = value.to_lowercase();
-        if !haystack.is_empty() && term_list.iter().any(|t| haystack.contains(&t.to_lowercase())) {
+        if !haystack.is_empty()
+            && term_list
+                .iter()
+                .any(|t| haystack.contains(&t.to_lowercase()))
+        {
             hits.push((*name).to_string());
         }
     }
@@ -409,11 +413,13 @@ pub fn search_entities(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::knowledge::claim::{
+        Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity,
+    };
     use crate::domain::knowledge::document::{Document, SourceType};
+    use crate::domain::ontology::predicate::ClaimPredicate;
     use crate::infrastructure::db::tests::memory_db;
     use crate::infrastructure::{claim_repository, entity_repository};
-    use crate::domain::knowledge::claim::{Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity};
-    use crate::domain::ontology::predicate::ClaimPredicate;
 
     fn seed_document(conn: &Connection, title: &str, content: &str) {
         let document = Document {
@@ -433,7 +439,10 @@ mod tests {
     #[test]
     fn query_is_wrapped_as_a_phrase_so_punctuation_cannot_break_fts() {
         assert_eq!(fts_query("async fn").as_deref(), Some("\"async fn\""));
-        assert_eq!(fts_query("a \"quoted\" bit").as_deref(), Some("\"a \"\"quoted\"\" bit\""));
+        assert_eq!(
+            fts_query("a \"quoted\" bit").as_deref(),
+            Some("\"a \"\"quoted\"\" bit\"")
+        );
         assert_eq!(fts_query("   "), None);
     }
 
@@ -474,7 +483,11 @@ mod tests {
     #[test]
     fn like_fallback_requires_every_term_across_fields() {
         let conn = memory_db();
-        seed_document(&conn, "note", "Rust and async are mentioned far apart here.");
+        seed_document(
+            &conn,
+            "note",
+            "Rust and async are mentioned far apart here.",
+        );
         // 「Rust」与「async」不连续：整句子串匹配不到，但逐词 AND 应命中。
         let hits = search_documents_like(&conn, "Rust async", 10).unwrap();
         assert_eq!(hits.len(), 1, "多词应逐词匹配（AND），而非要求整句连续");
@@ -549,7 +562,11 @@ mod tests {
     fn limit_is_respected() {
         let conn = memory_db();
         for index in 0..5 {
-            seed_document(&conn, &format!("note {index}"), &format!("shared keyword {index}"));
+            seed_document(
+                &conn,
+                &format!("note {index}"),
+                &format!("shared keyword {index}"),
+            );
         }
         assert_eq!(search_documents(&conn, "shared", 2).unwrap().len(), 2);
     }

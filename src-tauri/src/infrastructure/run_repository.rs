@@ -24,7 +24,14 @@ pub fn register(
     conn.execute(
         "INSERT INTO runs(id, parent_run_id, run_type, actor, status, started_at, metadata) \
          VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?6)",
-        rusqlite::params![id, parent_run_id, run_type.as_str(), actor, started_at, metadata],
+        rusqlite::params![
+            id,
+            parent_run_id,
+            run_type.as_str(),
+            actor,
+            started_at,
+            metadata
+        ],
     )?;
     Ok(())
 }
@@ -138,7 +145,15 @@ mod tests {
     #[test]
     fn register_and_finish_round_trip() {
         let conn = setup();
-        register(&conn, "r1", RunType::Extraction, "ExtractionAgent", None, "{}").unwrap();
+        register(
+            &conn,
+            "r1",
+            RunType::Extraction,
+            "ExtractionAgent",
+            None,
+            "{}",
+        )
+        .unwrap();
 
         let run = get(&conn, "r1").unwrap().unwrap();
         assert_eq!(run.run_type, RunType::Extraction);
@@ -159,7 +174,15 @@ mod tests {
     fn list_recent_is_newest_first_and_typed() {
         let conn = setup();
         register(&conn, "a", RunType::Agent, "KnowledgeAgent", None, "{}").unwrap();
-        register(&conn, "b", RunType::Extraction, "ExtractionAgent", None, "{}").unwrap();
+        register(
+            &conn,
+            "b",
+            RunType::Extraction,
+            "ExtractionAgent",
+            None,
+            "{}",
+        )
+        .unwrap();
         // 同秒内按 started_at 顺序不稳定，校验集合与条数即可。
         let runs = list_recent(&conn, 10).unwrap();
         assert_eq!(runs.len(), 2);

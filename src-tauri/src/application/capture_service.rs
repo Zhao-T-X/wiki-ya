@@ -20,16 +20,19 @@ use crate::infrastructure::{claim_repository, document_repository};
 fn source_type_from(raw: Option<&str>) -> AppResult<SourceType> {
     match raw.map(str::trim).filter(|value| !value.is_empty()) {
         None => Ok(SourceType::DEFAULT),
-        Some(value) => value.to_ascii_lowercase().parse::<SourceType>().map_err(|_| {
-            AppError::Domain(format!(
-                "未注册的来源类型 {value:?}（可选：{}）",
-                SourceType::ALL
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ))
-        }),
+        Some(value) => value
+            .to_ascii_lowercase()
+            .parse::<SourceType>()
+            .map_err(|_| {
+                AppError::Domain(format!(
+                    "未注册的来源类型 {value:?}（可选：{}）",
+                    SourceType::ALL
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            }),
     }
 }
 
@@ -193,7 +196,10 @@ mod tests {
         assert_eq!(summary.title, "Rust");
         assert_eq!(summary.source_type, "note");
         assert!(summary.chunk_count >= 1);
-        assert_eq!(summary.char_count, "第一段。\n\n第二段。".chars().count() as i64);
+        assert_eq!(
+            summary.char_count,
+            "第一段。\n\n第二段。".chars().count() as i64
+        );
         assert_eq!(summary.content_hash.len(), 64);
     }
 
@@ -210,11 +216,15 @@ mod tests {
     fn blank_titles_and_bodies_are_rejected() {
         let mut conn = memory_db();
         assert_eq!(
-            create_document(&mut conn, input("  ", "body")).unwrap_err().code(),
+            create_document(&mut conn, input("  ", "body"))
+                .unwrap_err()
+                .code(),
             "INVALID_INPUT"
         );
         assert_eq!(
-            create_document(&mut conn, input("title", "  ")).unwrap_err().code(),
+            create_document(&mut conn, input("title", "  "))
+                .unwrap_err()
+                .code(),
             "INVALID_INPUT"
         );
     }
@@ -231,7 +241,10 @@ mod tests {
 
         let mut good = input("t2", "c2");
         good.source_type = Some("MARKDOWN".into());
-        assert_eq!(create_document(&mut conn, good).unwrap().source_type, "markdown");
+        assert_eq!(
+            create_document(&mut conn, good).unwrap().source_type,
+            "markdown"
+        );
     }
 
     #[test]
@@ -255,7 +268,10 @@ mod tests {
 
         assert_eq!(detail.content, "第一段。\n\n第二段。");
         assert!(!detail.chunks.is_empty());
-        assert!(detail.claims.is_empty(), "Phase 1 还没有抽取，claims 必须为空而不是伪造");
+        assert!(
+            detail.claims.is_empty(),
+            "Phase 1 还没有抽取，claims 必须为空而不是伪造"
+        );
         assert_eq!(detail.document.id, summary.id);
     }
 
@@ -266,13 +282,22 @@ mod tests {
         let id = DocumentId::from_raw(&summary.id);
 
         // 人为破坏切片
-        conn.execute("DELETE FROM chunks WHERE document_id = ?1", rusqlite::params![summary.id])
-            .unwrap();
-        assert_eq!(document_repository::list_chunks(&conn, &id).unwrap().len(), 0);
+        conn.execute(
+            "DELETE FROM chunks WHERE document_id = ?1",
+            rusqlite::params![summary.id],
+        )
+        .unwrap();
+        assert_eq!(
+            document_repository::list_chunks(&conn, &id).unwrap().len(),
+            0
+        );
 
         let rebuilt = reindex_document(&mut conn, &id).unwrap();
         assert!(rebuilt.chunk_count >= 1);
-        assert_eq!(rebuilt.content_hash, summary.content_hash, "原文指纹不应改变（Rule 1）");
+        assert_eq!(
+            rebuilt.content_hash, summary.content_hash,
+            "原文指纹不应改变（Rule 1）"
+        );
         assert_eq!(
             get_document(&conn, &id).unwrap().content,
             "段落一。\n\n段落二。"
@@ -284,6 +309,9 @@ mod tests {
         let mut conn = memory_db();
         let id = DocumentId::from_raw("missing");
         assert_eq!(get_document(&conn, &id).unwrap_err().code(), "NOT_FOUND");
-        assert_eq!(reindex_document(&mut conn, &id).unwrap_err().code(), "NOT_FOUND");
+        assert_eq!(
+            reindex_document(&mut conn, &id).unwrap_err().code(),
+            "NOT_FOUND"
+        );
     }
 }

@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::ai::agents::AgentRole;
 use crate::ai::config::AiConfig;
 use crate::ai::context::{
-    compile, estimate_tokens, Budget, ContextItem, ContextPack, ContextKind, LoadStrategy,
+    compile, estimate_tokens, Budget, ContextItem, ContextKind, ContextPack, LoadStrategy,
 };
 use crate::ai::provider::{default_provider, CompletionRequest};
 use crate::application::dto::{AskRequest, AskResponse, AskSource};
@@ -36,9 +36,7 @@ pub fn ask(
             question: request.question.clone(),
             answer: String::new(),
             enabled: false,
-            note: Some(
-                "AI 未启用：请先在 Settings → AI 运行时 配置 API Key。".into(),
-            ),
+            note: Some("AI 未启用：请先在 Settings → AI 运行时 配置 API Key。".into()),
             sources: Vec::new(),
             context_stats: None,
             agent_run_id: None,
@@ -305,7 +303,8 @@ fn context_cache_key(conn: &Connection, question: &str, model: &str) -> String {
 
     // 指纹查询失败时若退化为空串参与哈希，可能与其它库状态碰撞。
     // 这里改为返回带随机 nonce 的 key，保证本次必然 miss。
-    let (document_fingerprint, claim_fingerprint) = match (document_fingerprint, claim_fingerprint) {
+    let (document_fingerprint, claim_fingerprint) = match (document_fingerprint, claim_fingerprint)
+    {
         (Ok(documents), Ok(claims)) => (documents, claims),
         _ => {
             crate::log_warn!("上下文缓存指纹查询失败，本次跳过缓存");

@@ -37,20 +37,14 @@ pub async fn run_skill(
 
 /// 创建自定义 Skill（M11：强制只读，产不出候选/提案）。
 #[tauri::command]
-pub fn create_skill(
-    state: State<'_, AppState>,
-    input: CreateSkillInput,
-) -> Result<(), AppError> {
+pub fn create_skill(state: State<'_, AppState>, input: CreateSkillInput) -> Result<(), AppError> {
     let conn = state.open()?;
     skill_service::create_skill(&conn, &input.name, &input.description, &input.instructions)
 }
 
 /// 更新自定义 Skill：产生新版本（内置 Skill 拒绝）。
 #[tauri::command]
-pub fn update_skill(
-    state: State<'_, AppState>,
-    input: UpdateSkillInput,
-) -> Result<i64, AppError> {
+pub fn update_skill(state: State<'_, AppState>, input: UpdateSkillInput) -> Result<i64, AppError> {
     let conn = state.open()?;
     skill_service::update_skill(&conn, &input.name, &input.description, &input.instructions)
 }

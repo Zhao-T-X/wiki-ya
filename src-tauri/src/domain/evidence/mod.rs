@@ -12,6 +12,5 @@
 pub mod evidence;
 
 pub use evidence::{
-    choose_level, Evidence, EvidenceLevel, DEFAULT_MAX_LEVEL, LOW_CONFIDENCE,
-    SIMILAR_QUOTE_RATIO,
+    choose_level, Evidence, EvidenceLevel, DEFAULT_MAX_LEVEL, LOW_CONFIDENCE, SIMILAR_QUOTE_RATIO,
 };

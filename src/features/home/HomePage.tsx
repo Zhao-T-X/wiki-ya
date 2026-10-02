@@ -169,7 +169,11 @@ export function HomePage() {
               totalChunks: event.total ?? prev.totalChunks,
             };
           case 'candidateCreated':
-            return { ...prev, candidatesFound: event.count ?? prev.candidatesFound };
+            // 逐批增量事件：累加（M6 修正后每批发一次）。
+            return {
+              ...prev,
+              candidatesFound: (prev.candidatesFound ?? 0) + (event.count ?? 0),
+            };
           case 'completed':
             return { ...prev, status: 'completed' };
           case 'failed':
@@ -230,7 +234,7 @@ export function HomePage() {
         <h1 className="text-sm font-semibold text-ink">把你想记住的东西丢进来</h1>
         <p className="mt-1 text-xs text-muted">
           {aiEnabled
-            ? '保存与切分在本地同步完成，随后自动用 AI 抽取知识候选 —— 只做预览，逐条确认后才落库。'
+            ? '保存与切分在本地同步完成，随后自动抽取知识候选 —— 候选立即留痕，逐条确认后生效。'
             : '保存与切分在本地同步完成，不调用 AI，没有 API Key 也能用。'}
         </p>
 

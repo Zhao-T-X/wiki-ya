@@ -28,7 +28,10 @@ impl QuestionStatus {
 
     /// 是否还需要继续研究。
     pub fn is_open_for_research(&self) -> bool {
-        matches!(self, QuestionStatus::Open | QuestionStatus::PartiallyAnswered)
+        matches!(
+            self,
+            QuestionStatus::Open | QuestionStatus::PartiallyAnswered
+        )
     }
 }
 

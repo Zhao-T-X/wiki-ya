@@ -114,7 +114,12 @@ mod tests {
     #[test]
     fn unrelated_candidates_still_yield_new() {
         let incoming = view("c2", ClaimPredicate::Uses, "e2", Polarity::Positive);
-        let existing = vec![view("c1", ClaimPredicate::Supports, "e3", Polarity::Positive)];
+        let existing = vec![view(
+            "c1",
+            ClaimPredicate::Supports,
+            "e3",
+            Polarity::Positive,
+        )];
         assert_eq!(classify(&incoming, &existing), EvolutionClassification::New);
     }
 

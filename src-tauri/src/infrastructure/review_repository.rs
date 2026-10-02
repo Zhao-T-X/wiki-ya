@@ -153,8 +153,8 @@ mod tests {
         assert_eq!(count_pending(&conn).unwrap(), 0);
         assert!(list_pending(&conn, 10).unwrap().is_empty());
 
-        let missing = resolve(&conn, &ReviewId::from_raw("nope"), ReviewStatus::Rejected)
-            .unwrap_err();
+        let missing =
+            resolve(&conn, &ReviewId::from_raw("nope"), ReviewStatus::Rejected).unwrap_err();
         assert_eq!(missing.code(), "NOT_FOUND");
     }
 

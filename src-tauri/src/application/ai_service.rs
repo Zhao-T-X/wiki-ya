@@ -6,8 +6,8 @@
 //!
 //! 不写业务逻辑以外的东西：状态、校验、事务都在它该在的地方。
 
-use serde::Deserialize;
 use rusqlite::Connection;
+use serde::Deserialize;
 
 use crate::ai::provider::{default_provider, CompletionRequest};
 use crate::application::dto::{ExtractedClaim, ExtractionReport};
@@ -332,7 +332,8 @@ mod tests {
 
     #[test]
     fn parse_claims_accepts_complete_object_wrapper() {
-        let text = r#"{"claims":[{"subject":"Rust","predicate":"enables","objectText":"安全并发"}]}"#;
+        let text =
+            r#"{"claims":[{"subject":"Rust","predicate":"enables","objectText":"安全并发"}]}"#;
         let claims = parse_claims(text).unwrap();
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].subject, "Rust");

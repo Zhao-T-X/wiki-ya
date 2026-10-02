@@ -130,7 +130,11 @@ mod tests {
             VERIFIED,
         );
         assert_eq!(plan.relation_status, ClaimRelationStatus::Candidate);
-        assert_eq!(plan.target_status, Some(ClaimStatus::Verified), "必须精确恢复");
+        assert_eq!(
+            plan.target_status,
+            Some(ClaimStatus::Verified),
+            "必须精确恢复"
+        );
         assert_eq!(plan.record_previous_status, None);
     }
 
@@ -157,8 +161,12 @@ mod tests {
             ClaimRelationType::Supplements,
             ClaimRelationType::Unclear,
         ] {
-            let plan = EvolutionTransition::plan(relationship, ReviewAction::Accept, VERIFIED, None);
-            assert_eq!(plan.target_status, None, "{relationship:?} 不应改动 Claim 状态");
+            let plan =
+                EvolutionTransition::plan(relationship, ReviewAction::Accept, VERIFIED, None);
+            assert_eq!(
+                plan.target_status, None,
+                "{relationship:?} 不应改动 Claim 状态"
+            );
             assert_eq!(plan.record_previous_status, None);
         }
     }

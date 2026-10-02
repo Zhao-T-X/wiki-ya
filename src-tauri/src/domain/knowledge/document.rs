@@ -41,7 +41,10 @@ impl SourceType {
 
     /// 由文件扩展名推断来源类型（导入路径）。
     pub fn from_extension(extension: &str) -> AppResult<SourceType> {
-        let key = extension.trim().trim_start_matches('.').to_ascii_lowercase();
+        let key = extension
+            .trim()
+            .trim_start_matches('.')
+            .to_ascii_lowercase();
         match key.as_str() {
             "md" | "markdown" => Ok(SourceType::Markdown),
             "txt" | "text" => Ok(SourceType::Text),
@@ -109,15 +112,15 @@ mod tests {
     fn blank_documents_are_rejected() {
         assert!(Document::validate("", "body").is_err());
         assert!(Document::validate("title", "   ").is_err());
-        assert_eq!(
-            Document::validate("  Title  ", "body").unwrap().0,
-            "Title"
-        );
+        assert_eq!(Document::validate("  Title  ", "body").unwrap().0, "Title");
     }
 
     #[test]
     fn extensions_map_to_supported_sources_only() {
-        assert_eq!(SourceType::from_extension(".MD").unwrap(), SourceType::Markdown);
+        assert_eq!(
+            SourceType::from_extension(".MD").unwrap(),
+            SourceType::Markdown
+        );
         assert_eq!(SourceType::from_extension("htm").unwrap(), SourceType::Html);
         assert!(SourceType::from_extension("pdf").is_err());
     }

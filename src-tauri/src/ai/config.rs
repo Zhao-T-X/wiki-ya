@@ -67,7 +67,11 @@ impl AiConfig {
             env.unwrap_or_else(|| default.to_string())
         };
 
-        let base_url = resolve(KEY_BASE_URL, std::env::var("WIKIYA_BASE_URL").ok(), DEFAULT_BASE_URL);
+        let base_url = resolve(
+            KEY_BASE_URL,
+            std::env::var("WIKIYA_BASE_URL").ok(),
+            DEFAULT_BASE_URL,
+        );
         let model = resolve(KEY_MODEL, std::env::var("WIKIYA_MODEL").ok(), DEFAULT_MODEL);
         let embedding_model = resolve(
             KEY_EMBEDDING_MODEL,

@@ -19,14 +19,14 @@ use std::str::FromStr;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
+use crate::application::skill_service;
 use crate::domain::agent_profile::AgentProfile;
-use crate::domain::policy::Policy;
 use crate::domain::extraction::ExtractionRunStatus;
+use crate::domain::policy::Policy;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
 use crate::events::{RunEvent, RunSink};
 use crate::infrastructure::{db, run_repository};
-use crate::application::skill_service;
 
 /// 默认 Profile（启动时 seed；用户后续可在设置里调整——M13 UI）。
 const DEFAULT_PROFILE_JSON: &str = r#"{
@@ -201,7 +201,10 @@ fn run_agent_sync(
                 sink,
             ) {
                 Ok((skill_run_id, summary)) => {
-                    results.insert(skill.clone(), json!({ "runId": skill_run_id, "summary": summary }));
+                    results.insert(
+                        skill.clone(),
+                        json!({ "runId": skill_run_id, "summary": summary }),
+                    );
                 }
                 Err(err) => {
                     results.insert(skill.clone(), json!({ "error": err.to_string() }));
@@ -294,7 +297,10 @@ mod tests {
         let run = run_repository::get(&conn, "agent-1").unwrap().unwrap();
         assert_eq!(run.status, ExtractionRunStatus::Completed);
         let metadata: Value = serde_json::from_str(&run.metadata).unwrap();
-        assert_eq!(metadata["skills"]["knowledge-extraction"]["skipped"], json!("policy"));
+        assert_eq!(
+            metadata["skills"]["knowledge-extraction"]["skipped"],
+            json!("policy")
+        );
     }
 }
 

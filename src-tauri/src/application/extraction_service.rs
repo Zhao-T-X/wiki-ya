@@ -20,7 +20,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::ai::provider::default_provider;
 use crate::application::ai_service;
-use crate::application::dto::{ExtractionReport, ExtractionRunDto, ExtractedClaim};
+use crate::application::dto::{ExtractedClaim, ExtractionReport, ExtractionRunDto};
 use crate::domain::common::ids::DocumentId;
 use crate::domain::extraction::{ExtractionRun, ExtractionRunStatus, ExtractionStage};
 use crate::domain::knowledge::candidate::{Candidate, CandidateStatus};
@@ -113,7 +113,7 @@ pub fn recover_interrupted_runs(conn: &Connection) -> AppResult<usize> {
 pub async fn execute(app: AppHandle, db_path: PathBuf, run_id: String) {
     // 事件经 Tauri 全局频道 `extraction-events` 推前端。sink 持有 AppHandle 克隆，
     // 与 commands 层解耦（Service 不依赖 Commands）。
-        // 统一 Run 事件（M1）：单一 run-events 频道，过渡期与旧频道并存。
+    // 统一 Run 事件（M1）：单一 run-events 频道，过渡期与旧频道并存。
     let run_emitter = app.clone();
     let run_events: RunSink = std::sync::Arc::new(move |event: &RunEvent| {
         let _ = run_emitter.emit("run-events", event);
@@ -178,11 +178,7 @@ pub(crate) fn to_dto(run: &ExtractionRun) -> ExtractionRunDto {
 }
 
 /// 后台管线：状态 / 阶段 / 进度逐段持久化并推送事件（旧频道 + 统一 RunEvent 双发）。
-fn run_pipeline(
-    db_path: &PathBuf,
-    run_id: &str,
-    run_sink: &RunSink,
-) -> AppResult<()> {
+fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResult<()> {
     let conn = db::open(db_path)?;
     let run = extraction_run_repository::get(&conn, run_id)?;
     let document_id = run.document_id.clone();
@@ -236,7 +232,7 @@ fn run_pipeline(
             None,
             None,
         )?;
-            return Ok(());
+        return Ok(());
     }
 
     // ---- Extracting（分批）----
@@ -255,7 +251,7 @@ fn run_pipeline(
         // 批与批之间检查取消：用户点了取消就礼貌停下（先完成当前请求）。
         let current = extraction_run_repository::get(&conn, run_id)?;
         if current.status == ExtractionRunStatus::Cancelled {
-                    run_sink(&RunEvent::Cancelled {
+            run_sink(&RunEvent::Cancelled {
                 run_id: run_id.to_string(),
             });
             return Ok(());
@@ -268,45 +264,48 @@ fn run_pipeline(
             .join("\n");
         let user = format!("文档标题：{title}\n\n正文切片：\n{corpus}");
         let batch_claims = ai_service::extract_corpus(&conn, system.clone(), user)?;
+        // M6 修正（外部复盘准确指出）：候选**逐批立即持久化**——
+        // Batch 4 失败时 Batch 1~3 的候选已经在库，不再等 Validating 统一写入。
+        for claim in &batch_claims {
+            let candidate = Candidate {
+                id: uuid::Uuid::new_v4().to_string(),
+                run_id: run_id.to_string(),
+                document_id: document_id.clone(),
+                subject: claim.subject.clone(),
+                predicate: claim.predicate.clone(),
+                object_text: claim.object_text.clone(),
+                content: claim.content.clone(),
+                claim_type: claim.claim_type.clone(),
+                polarity: claim.polarity.clone(),
+                modality: claim.modality.clone(),
+                confidence: claim.confidence,
+                source_chunk_index: claim.source_chunk_index.map(|v| v as i64),
+                source_quote: claim.source_quote.clone(),
+                sentence: claim.sentence.clone(),
+                status: CandidateStatus::Pending,
+                accepted_claim_id: None,
+                reject_reason: claim.reject_reason.clone(),
+                created_at: String::new(),
+            };
+            candidate_repository::insert(&conn, &candidate)?;
+        }
+        let batch_count = batch_claims.len();
         all.extend(batch_claims);
         processed += batch.len();
         extraction_run_repository::set_progress(&conn, run_id, processed as i64, total as i64)?;
-            run_sink(&RunEvent::Progress {
+        run_sink(&RunEvent::Progress {
             run_id: run_id.to_string(),
             processed,
             total,
         });
-    }
-    run_sink(&RunEvent::CandidateCreated {
-        run_id: run_id.to_string(),
-        count: all.len(),
-    });
-
-    // ---- Validating（M6：候选一产生就持久化——没确认 ≠ 不存在）----
-    extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Validating)?;
-    for claim in &all {
-        let candidate = Candidate {
-            id: uuid::Uuid::new_v4().to_string(),
+        run_sink(&RunEvent::CandidateCreated {
             run_id: run_id.to_string(),
-            document_id: document_id.clone(),
-            subject: claim.subject.clone(),
-            predicate: claim.predicate.clone(),
-            object_text: claim.object_text.clone(),
-            content: claim.content.clone(),
-            claim_type: claim.claim_type.clone(),
-            polarity: claim.polarity.clone(),
-            modality: claim.modality.clone(),
-            confidence: claim.confidence,
-            source_chunk_index: claim.source_chunk_index.map(|v| v as i64),
-            source_quote: claim.source_quote.clone(),
-            sentence: claim.sentence.clone(),
-            status: CandidateStatus::Pending,
-            accepted_claim_id: None,
-            reject_reason: claim.reject_reason.clone(),
-            created_at: String::new(),
-        };
-        candidate_repository::insert(&conn, &candidate)?;
+            count: batch_count,
+        });
     }
+
+    // ---- Validating（候选已在 Extracting 阶段逐批落库——M6 修正）----
+    extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Validating)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Validating.as_str())?;
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),
@@ -315,7 +314,8 @@ fn run_pipeline(
     let accepted: Vec<&ExtractedClaim> = all.iter().filter(|c| c.accepted).collect();
     let candidates_found = all.len() as i64;
 
-    // ---- Comparing（相对库内已有知识去重，估算"变更数"）----
+    // ---- Comparing（预估变更数：签名去重，仅供排序参考；真正的演化
+    // 分类在用户 accept 候选时由 analyze_document 产生并进 Review）----
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Comparing)?;
     run_repository::set_stage(&conn, run_id, ExtractionStage::Comparing.as_str())?;
     run_sink(&RunEvent::StageChanged {
@@ -357,16 +357,12 @@ fn run_pipeline(
 }
 
 /// 估算"相对库内已有知识的新增变更数"：把已接受的候选与同文档现有 Claim 做签名比对。
-fn count_duplicates(
-    conn: &Connection,
-    document_id: &str,
-    accepted: &[&ExtractedClaim],
-) -> usize {
-    let existing = match claim_repository::list_by_document(conn, &DocumentId::from_raw(document_id))
-    {
-        Ok(rows) => rows,
-        Err(_) => return 0,
-    };
+fn count_duplicates(conn: &Connection, document_id: &str, accepted: &[&ExtractedClaim]) -> usize {
+    let existing =
+        match claim_repository::list_by_document(conn, &DocumentId::from_raw(document_id)) {
+            Ok(rows) => rows,
+            Err(_) => return 0,
+        };
     let mut signatures: HashSet<(String, String, String)> = HashSet::new();
     for row in &existing {
         let object = object_text_of(&row.claim.object).to_lowercase();
@@ -383,7 +379,11 @@ fn count_duplicates(
             .clone()
             .unwrap_or_default()
             .to_lowercase();
-        let signature = (candidate.subject.to_lowercase(), candidate.predicate.clone(), object);
+        let signature = (
+            candidate.subject.to_lowercase(),
+            candidate.predicate.clone(),
+            object,
+        );
         if signatures.contains(&signature) {
             duplicates += 1;
         }

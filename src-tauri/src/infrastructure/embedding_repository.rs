@@ -179,6 +179,9 @@ mod tests {
         assert_eq!(nearest.len(), 1);
         assert_eq!(nearest[0].id, "c1");
         assert_eq!(nearest[0].content, "hello world");
-        assert!((nearest[0].score - 1.0).abs() < 1e-6, "相同向量余弦应为 1.0");
+        assert!(
+            (nearest[0].score - 1.0).abs() < 1e-6,
+            "相同向量余弦应为 1.0"
+        );
     }
 }

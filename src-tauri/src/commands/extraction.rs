@@ -58,10 +58,7 @@ pub fn list_extraction_runs(
 
 /// 取消一条还在跑的 Run。已终态则无操作。
 #[tauri::command]
-pub fn cancel_extraction(
-    state: State<'_, AppState>,
-    input: IdInput,
-) -> Result<bool, AppError> {
+pub fn cancel_extraction(state: State<'_, AppState>, input: IdInput) -> Result<bool, AppError> {
     let conn = state.open()?;
     extraction_service::cancel_run(&conn, &input.id)
 }

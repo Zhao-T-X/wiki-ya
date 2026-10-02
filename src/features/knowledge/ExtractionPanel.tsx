@@ -81,7 +81,11 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
               totalChunks: event.total ?? prev.totalChunks,
             };
           case 'candidateCreated':
-            return { ...prev, candidatesFound: event.count ?? prev.candidatesFound };
+            // 逐批增量事件：累加（M6 修正后每批发一次）。
+            return {
+              ...prev,
+              candidatesFound: (prev.candidatesFound ?? 0) + (event.count ?? 0),
+            };
           case 'completed':
             return { ...prev, status: 'completed' };
           case 'failed':
@@ -304,7 +308,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
               {acceptedCount > 0 ? ` · 已接受 ${acceptedCount}` : ''}
               {rejectedCount > 0 ? ` · 已拒绝 ${rejectedCount}` : ''}
               {pendingCount > 0 ? ` · 待确认 ${pendingCount}` : ''}
-              {run && run.changesFound > 0 ? ` · 约 ${run.changesFound} 条为新增` : ''}
+              {run && run.changesFound > 0 ? ` · 预估新增 ${run.changesFound} 条（以确认时演化分析为准）` : ''}
             </span>
             {pendingCount > 1 ? (
               <Button

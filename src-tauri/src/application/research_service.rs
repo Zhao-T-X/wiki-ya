@@ -10,9 +10,7 @@ use serde_json::json;
 use crate::ai::agents::AgentRole;
 use crate::ai::provider::default_provider;
 use crate::ai::runtime;
-use crate::application::dto::{
-    AgentStepDto, ResearchReport, ResearchTaskCard, StartResearchInput,
-};
+use crate::application::dto::{AgentStepDto, ResearchReport, ResearchTaskCard, StartResearchInput};
 use crate::domain::review::review::ReviewTarget;
 use crate::error::{AppError, AppResult};
 use crate::events::RunSink;
@@ -52,9 +50,7 @@ pub fn start_research(
             question,
             answer: String::new(),
             enabled: false,
-            note: Some(
-                "AI 未启用：请先在 Settings → AI 运行时 配置 API Key，再启动研究。".into(),
-            ),
+            note: Some("AI 未启用：请先在 Settings → AI 运行时 配置 API Key，再启动研究。".into()),
             steps: Vec::new(),
             review_id: None,
         });
@@ -73,8 +69,7 @@ pub fn start_research(
 
     match runtime::run(conn, AgentRole::Research, &question, &run_id, run_sink) {
         Ok(run) => {
-            let steps_value = serde_json::to_value(&run.steps)
-                .unwrap_or_else(|_| json!([]));
+            let steps_value = serde_json::to_value(&run.steps).unwrap_or_else(|_| json!([]));
             let findings = json!({
                 "summary": run.answer,
                 "steps": steps_value,

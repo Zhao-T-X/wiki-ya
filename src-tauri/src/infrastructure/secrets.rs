@@ -153,9 +153,9 @@ impl SecretCipher {
         let cipher = self.cipher()?;
         let nonce = Nonce::<Aes256Gcm>::try_from(nonce_bytes.as_slice())
             .map_err(|_| AppError::Internal("密文 nonce 长度非法".into()))?;
-        let plaintext = cipher
-            .decrypt(&nonce, ciphertext.as_slice())
-            .map_err(|_| AppError::Internal("解密 API Key 失败（主密钥不匹配或数据被篡改）".into()))?;
+        let plaintext = cipher.decrypt(&nonce, ciphertext.as_slice()).map_err(|_| {
+            AppError::Internal("解密 API Key 失败（主密钥不匹配或数据被篡改）".into())
+        })?;
 
         String::from_utf8(plaintext)
             .map_err(|err| AppError::Internal(format!("解密结果不是有效 UTF-8：{err}")))

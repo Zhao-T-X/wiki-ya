@@ -114,9 +114,7 @@ fn paragraph_spans(content: &str) -> Vec<(usize, usize)> {
                 }
                 // 跳过全部连续空白与换行，下一段从第一个非空白字符开始
                 let mut next = probe;
-                while next < bytes.len()
-                    && matches!(bytes[next], b'\n' | b' ' | b'\t' | b'\r')
-                {
+                while next < bytes.len() && matches!(bytes[next], b'\n' | b' ' | b'\t' | b'\r') {
                     next += 1;
                 }
                 start = next;
@@ -234,10 +232,7 @@ mod tests {
                 "块超长：{}",
                 chunk.content.chars().count()
             );
-            assert_eq!(
-                &source[chunk.start_offset..chunk.end_offset],
-                chunk.content
-            );
+            assert_eq!(&source[chunk.start_offset..chunk.end_offset], chunk.content);
         }
         // 切点应落在句末，而不是句中
         assert!(chunks[0].content.ends_with('。'));
@@ -248,10 +243,7 @@ mod tests {
         let source = "中文段落。".repeat(600);
         let chunks = chunk_document(&source);
         for chunk in &chunks {
-            assert_eq!(
-                &source[chunk.start_offset..chunk.end_offset],
-                chunk.content
-            );
+            assert_eq!(&source[chunk.start_offset..chunk.end_offset], chunk.content);
         }
     }
 

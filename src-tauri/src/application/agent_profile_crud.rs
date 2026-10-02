@@ -11,7 +11,9 @@
 
 use rusqlite::Connection;
 
-use crate::application::agent_profile_service::{ensure_default_profiles, get_profile, list_profiles};
+use crate::application::agent_profile_service::{
+    ensure_default_profiles, get_profile, list_profiles,
+};
 use crate::domain::agent_profile::AgentProfile;
 use crate::domain::policy::Policy;
 use crate::error::{AppError, AppResult};
@@ -33,9 +35,8 @@ fn validate_name(name: &str) -> AppResult<()> {
 }
 
 fn validate_policy(policy: &[String]) -> AppResult<()> {
-    let cap = Policy::highest_of(policy.iter().map(String::as_str)).ok_or_else(|| {
-        AppError::Domain("policy 不能为空（至少包含 read）".into())
-    })?;
+    let cap = Policy::highest_of(policy.iter().map(String::as_str))
+        .ok_or_else(|| AppError::Domain("policy 不能为空（至少包含 read）".into()))?;
     if cap.at_least(&Policy::Mutate) {
         // 结构边界（M5 测试固化的同一纪律）：自定义 Agent 拿不到 MUTATE。
         return Err(AppError::Domain(
@@ -165,14 +166,22 @@ mod tests {
         // 正常创建。
         create_profile(
             &mut conn,
-            &profile("tech-researcher", &["read", "propose"], &["knowledge-extraction"]),
+            &profile(
+                "tech-researcher",
+                &["read", "propose"],
+                &["knowledge-extraction"],
+            ),
         )
         .unwrap();
 
         // MUTATE 上限拒绝（结构边界：自定义 Agent 拿不到写权限）。
         assert!(create_profile(
             &mut conn,
-            &profile("god-agent", &["read", "propose", "mutate"], &["knowledge-answering"]),
+            &profile(
+                "god-agent",
+                &["read", "propose", "mutate"],
+                &["knowledge-answering"]
+            ),
         )
         .is_err());
 
@@ -181,7 +190,11 @@ mod tests {
         // 空 Skill 列表拒绝。
         assert!(create_profile(&mut conn, &profile("x2", &["read"], &[])).is_err());
         // 默认名不可占用。
-        assert!(create_profile(&mut conn, &profile("knowledge-analyst", &["read"], &["knowledge-answering"])).is_err());
+        assert!(create_profile(
+            &mut conn,
+            &profile("knowledge-analyst", &["read"], &["knowledge-answering"])
+        )
+        .is_err());
 
         // 更新（缩权：只保留 read）。
         update_profile(

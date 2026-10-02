@@ -134,10 +134,7 @@ mod tests {
     #[test]
     fn normalisation_collapses_whitespace_and_case() {
         assert_eq!(normalize_name("  Rust  Language "), "rust language");
-        assert_eq!(
-            normalize_name("Async  FN in Trait"),
-            "async fn in trait"
-        );
+        assert_eq!(normalize_name("Async  FN in Trait"), "async fn in trait");
     }
 
     #[test]

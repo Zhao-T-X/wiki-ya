@@ -55,9 +55,7 @@ pub fn list_by_run(conn: &Connection, run_id: &str) -> AppResult<Vec<Candidate>>
 
 /// 读取单条候选。
 pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Candidate>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {COLS} FROM candidates WHERE id = ?1"
-    ))?;
+    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM candidates WHERE id = ?1"))?;
     let row = stmt
         .query_row(rusqlite::params![id], map_candidate)
         .optional()?;
@@ -168,7 +166,14 @@ mod tests {
         assert!(all.iter().all(|c| c.status == CandidateStatus::Pending));
 
         // accept → 记录 claim id；reject → 记录原因。
-        decide(&conn, "c1", CandidateStatus::Accepted, Some("claim-9"), None).unwrap();
+        decide(
+            &conn,
+            "c1",
+            CandidateStatus::Accepted,
+            Some("claim-9"),
+            None,
+        )
+        .unwrap();
         decide(
             &conn,
             "c2",

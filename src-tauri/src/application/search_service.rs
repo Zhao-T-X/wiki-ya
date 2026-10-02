@@ -139,9 +139,7 @@ pub fn search(conn: &Connection, input: SearchInput) -> AppResult<SearchResponse
 
     let mut notices: Vec<String> = Vec::new();
     if requested_semantic {
-        notices.push(
-            "语义检索需要 AI Runtime（Phase 6），本次结果全部来自词法检索。".to_string(),
-        );
+        notices.push("语义检索需要 AI Runtime（Phase 6），本次结果全部来自词法检索。".to_string());
     }
     if chunk_requested {
         notices.push(

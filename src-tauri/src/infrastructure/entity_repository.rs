@@ -190,9 +190,8 @@ pub fn insert_alias(conn: &Connection, entity_id: &EntityId, alias: &str) -> App
 
 /// 列出别名。
 pub fn list_aliases(conn: &Connection, entity_id: &EntityId) -> AppResult<Vec<String>> {
-    let mut statement = conn.prepare(
-        "SELECT alias FROM entity_aliases WHERE entity_id = ?1 ORDER BY alias",
-    )?;
+    let mut statement =
+        conn.prepare("SELECT alias FROM entity_aliases WHERE entity_id = ?1 ORDER BY alias")?;
     let rows = statement.query_map(params![entity_id.as_str()], |row| row.get::<_, String>(0))?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
@@ -258,10 +257,7 @@ mod tests {
     #[test]
     fn insert_and_read_round_trip_types() {
         let conn = memory_db();
-        let stored = entity(
-            "SQLite",
-            vec![EntityType::Software, EntityType::Product],
-        );
+        let stored = entity("SQLite", vec![EntityType::Software, EntityType::Product]);
         insert(&conn, &stored).unwrap();
 
         let loaded = find_by_id(&conn, &stored.id).unwrap().unwrap();

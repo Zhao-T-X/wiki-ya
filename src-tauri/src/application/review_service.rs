@@ -27,8 +27,8 @@ pub fn list_review_items(conn: &Connection, limit: usize) -> AppResult<Vec<Revie
 
     for row in &rows {
         // 引文来自发起方（新知识）的主证据；取不到就如实留空，不编造。
-        let quote = claim_repository::get(conn, &row.source_claim_id)?
-            .and_then(|claim| claim.source_quote);
+        let quote =
+            claim_repository::get(conn, &row.source_claim_id)?.and_then(|claim| claim.source_quote);
         let (what_changed, impact) = describe(row.relationship, &row.source_text, &row.target_text);
 
         items.push(ReviewItem {
@@ -84,7 +84,8 @@ pub fn decide_relation(
         return Err(AppError::Invalid("relationId 不能为空".into()));
     }
 
-    let row = evolution_service::decide_relation(conn, &relation_id, action, relationship_override)?;
+    let row =
+        evolution_service::decide_relation(conn, &relation_id, action, relationship_override)?;
     Ok(to_relation_card_dto(&row))
 }
 
@@ -100,11 +101,9 @@ mod tests {
 
     fn seed_conflict(conn: &mut Connection) -> (String, String, String) {
         let first = seed_document(conn, "First", "OpenAI 的 CEO 是 Sam。");
-        let old = knowledge_service::create_claim(
-            conn,
-            claim_input("OpenAI", "is", Some("Sam"), &first),
-        )
-        .unwrap();
+        let old =
+            knowledge_service::create_claim(conn, claim_input("OpenAI", "is", Some("Sam"), &first))
+                .unwrap();
 
         let second = seed_document(conn, "Second", "OpenAI 的 CEO 是 Alice。");
         let new = knowledge_service::create_claim(
@@ -227,7 +226,11 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(status_of(&conn, &old_id), "candidate", "必须精确恢复（INV-09）");
+        assert_eq!(
+            status_of(&conn, &old_id),
+            "candidate",
+            "必须精确恢复（INV-09）"
+        );
     }
 
     #[test]

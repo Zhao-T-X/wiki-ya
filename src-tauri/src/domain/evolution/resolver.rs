@@ -17,7 +17,11 @@ pub struct KnowledgeResolver;
 
 impl KnowledgeResolver {
     /// 派生「当前知识」视图（含被保留的历史条目）。
-    pub fn resolve(claims: &[ClaimView], validities: &[Validity<'_>], now: &str) -> Vec<ResolvedClaim> {
+    pub fn resolve(
+        claims: &[ClaimView],
+        validities: &[Validity<'_>],
+        now: &str,
+    ) -> Vec<ResolvedClaim> {
         resolve_current(claims, validities, now)
     }
 

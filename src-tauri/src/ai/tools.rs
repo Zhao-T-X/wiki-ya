@@ -223,7 +223,8 @@ fn search_knowledge(conn: &Connection, args: &Value) -> AppResult<ToolOutput> {
     Ok(ToolOutput {
         value: json!({ "results": results }),
         truncated,
-        hint: truncated.then(|| "结果已截断；用 get_claim(id) / get_entity(id) 下钻详情".to_string()),
+        hint: truncated
+            .then(|| "结果已截断；用 get_claim(id) / get_entity(id) 下钻详情".to_string()),
     })
 }
 

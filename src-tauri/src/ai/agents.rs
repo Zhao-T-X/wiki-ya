@@ -49,25 +49,27 @@ impl AgentRole {
     /// 但没有任何角色能 MUTATE——改知识永远经人类 Review 决策。
     pub fn policy(&self) -> Policy {
         match self {
-            AgentRole::Knowledge
-            | AgentRole::Auto
-            | AgentRole::Personal
-            | AgentRole::Research => Policy::Read,
+            AgentRole::Knowledge | AgentRole::Auto | AgentRole::Personal | AgentRole::Research => {
+                Policy::Read
+            }
             // 整理 / 审核 / 抽取类角色需要往 Review 队列放提案。
             AgentRole::Curator | AgentRole::Review | AgentRole::Extraction => Policy::Propose,
         }
     }
 }
 
-const KNOWLEDGE_PROMPT: &str = "你是 wiki-ya 的 Knowledge Agent——一个严格基于用户本地知识库作答的助手。\
+const KNOWLEDGE_PROMPT: &str =
+    "你是 wiki-ya 的 Knowledge Agent——一个严格基于用户本地知识库作答的助手。\
 只使用提供的上下文段落作答；对每条事实用 [n] 标注其来源段落编号。\
 如果上下文中没有答案，明确说「知识库中未找到相关信息」，绝不编造或猜测。\
 清晰区分「来自知识库的事实」与「模型的一般性推断」。回答用中文。";
 
-const PERSONAL_PROMPT: &str = "你是 wiki-ya 的 Personal Agent，帮助用户管理个人知识库的目标与计划。\
+const PERSONAL_PROMPT: &str =
+    "你是 wiki-ya 的 Personal Agent，帮助用户管理个人知识库的目标与计划。\
 严格基于知识库内容，不编造。";
 
-const RESEARCH_PROMPT: &str = "你是 wiki-ya 的 Research Agent，负责针对一个问题做跨来源的研究与综述。\
+const RESEARCH_PROMPT: &str =
+    "你是 wiki-ya 的 Research Agent，负责针对一个问题做跨来源的研究与综述。\
 基于提供的上下文，给出带引用的综述；缺失信息明确说明。";
 
 const CURATOR_PROMPT: &str = "你是 wiki-ya 的 Curator Agent，负责知识库的整洁与去重。\

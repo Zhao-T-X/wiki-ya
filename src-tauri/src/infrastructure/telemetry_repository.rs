@@ -144,13 +144,7 @@ pub fn finish_agent_run(
         None
     };
     if let Some(run_status) = run_status {
-        crate::infrastructure::run_repository::finish(
-            conn,
-            id,
-            run_status,
-            None,
-            error_message,
-        )?;
+        crate::infrastructure::run_repository::finish(conn, id, run_status, None, error_message)?;
     }
     Ok(())
 }
@@ -208,12 +202,7 @@ pub fn cache_get(conn: &Connection, cache_key: &str) -> AppResult<Option<Value>>
 }
 
 /// 写入（或覆盖）缓存条目；hits 计数保留（`ON CONFLICT DO UPDATE`）。
-pub fn cache_put(
-    conn: &Connection,
-    cache_key: &str,
-    agent: &str,
-    prompt: &Value,
-) -> AppResult<()> {
+pub fn cache_put(conn: &Connection, cache_key: &str, agent: &str, prompt: &Value) -> AppResult<()> {
     conn.execute(
         "INSERT INTO context_cache(cache_key, agent, prompt_json) VALUES (?1,?2,?3) \
          ON CONFLICT(cache_key) DO UPDATE SET prompt_json = excluded.prompt_json",
@@ -230,7 +219,8 @@ mod tests {
     #[test]
     fn agent_run_round_trips_through_start_and_finish() {
         let conn = memory_db();
-        let id = start_agent_run(&conn, "agent", Some("ResearchAgent"), Some("gpt-4o-mini")).unwrap();
+        let id =
+            start_agent_run(&conn, "agent", Some("ResearchAgent"), Some("gpt-4o-mini")).unwrap();
         finish_agent_run(
             &conn,
             &id,
@@ -265,9 +255,11 @@ mod tests {
         cache_put(&conn, "k1", "knowledge", &serde_json::json!({ "a": 2 })).unwrap();
         let _: Option<Value> = cache_get(&conn, "k1").unwrap();
         let hits: i64 = conn
-            .query_row("SELECT hits FROM context_cache WHERE cache_key = ?1", ["k1"], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT hits FROM context_cache WHERE cache_key = ?1",
+                ["k1"],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(hits >= 1);
     }

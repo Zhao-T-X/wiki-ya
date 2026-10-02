@@ -85,12 +85,7 @@ pub fn set_stage(conn: &Connection, id: &str, stage: ExtractionStage) -> AppResu
 }
 
 /// 更新已处理 / 总块数（Extracting 阶段逐批推进）。
-pub fn set_progress(
-    conn: &Connection,
-    id: &str,
-    processed: i64,
-    total: i64,
-) -> AppResult<()> {
+pub fn set_progress(conn: &Connection, id: &str, processed: i64, total: i64) -> AppResult<()> {
     conn.execute(
         "UPDATE extraction_runs SET processed_chunks = ?2, total_chunks = ?3 WHERE id = ?1",
         params![id, processed, total],
@@ -99,12 +94,7 @@ pub fn set_progress(
 }
 
 /// 写入候选数 / 变更数（Validating / Comparing 后）。
-pub fn set_counts(
-    conn: &Connection,
-    id: &str,
-    candidates: i64,
-    changes: i64,
-) -> AppResult<()> {
+pub fn set_counts(conn: &Connection, id: &str, candidates: i64, changes: i64) -> AppResult<()> {
     conn.execute(
         "UPDATE extraction_runs SET candidates_found = ?2, changes_found = ?3 WHERE id = ?1",
         params![id, candidates, changes],

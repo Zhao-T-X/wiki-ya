@@ -34,7 +34,10 @@ const REGISTRY_FILES: &[(&str, &str)] = &[
     ("claim-predicate-registry.json", CLAIM_PREDICATE_REGISTRY),
     ("entity-type-registry.json", ENTITY_TYPE_REGISTRY),
     ("relation-normalization-rules.json", NORMALIZATION_RULES),
-    ("relation-predicate-registry.json", RELATION_PREDICATE_REGISTRY),
+    (
+        "relation-predicate-registry.json",
+        RELATION_PREDICATE_REGISTRY,
+    ),
 ];
 
 /// 归一化规则里出现、但**未注册**为受控谓词的遗留词。
@@ -178,10 +181,13 @@ fn build() -> AppResult<Registry> {
     let claim_file: ClaimPredicateRegistryFile = serde_json::from_str(CLAIM_PREDICATE_REGISTRY)
         .map_err(|e| AppError::Internal(format!("claim-predicate-registry.json 解析失败：{e}")))?;
     let relation_file: RelationPredicateRegistryFile =
-        serde_json::from_str(RELATION_PREDICATE_REGISTRY)
-            .map_err(|e| AppError::Internal(format!("relation-predicate-registry.json 解析失败：{e}")))?;
-    let normalization: NormalizationRules = serde_json::from_str(NORMALIZATION_RULES)
-        .map_err(|e| AppError::Internal(format!("relation-normalization-rules.json 解析失败：{e}")))?;
+        serde_json::from_str(RELATION_PREDICATE_REGISTRY).map_err(|e| {
+            AppError::Internal(format!("relation-predicate-registry.json 解析失败：{e}"))
+        })?;
+    let normalization: NormalizationRules =
+        serde_json::from_str(NORMALIZATION_RULES).map_err(|e| {
+            AppError::Internal(format!("relation-normalization-rules.json 解析失败：{e}"))
+        })?;
 
     // 谓词字符串在加载时就转成受控枚举：JSON 里出现未注册词会立刻失败，
     // 而不是等到某次抽取才崩。
@@ -198,9 +204,12 @@ fn build() -> AppResult<Registry> {
         .relation_predicates
         .iter()
         .map(|spec| {
-            spec.predicate
-                .parse::<RelationPredicate>()
-                .map_err(|e| AppError::Internal(format!("relation 注册表含非法谓语 {:?}：{e}", spec.predicate)))
+            spec.predicate.parse::<RelationPredicate>().map_err(|e| {
+                AppError::Internal(format!(
+                    "relation 注册表含非法谓语 {:?}：{e}",
+                    spec.predicate
+                ))
+            })
         })
         .collect::<AppResult<Vec<_>>>()?;
 
@@ -330,10 +339,8 @@ fn check_rule_word(word: &str) -> AppResult<()> {
     if LEGACY_UNREGISTERED_RULE_WORDS.contains(&word) {
         return Ok(());
     }
-    let registered = word
-        .parse::<ClaimPredicate>()
-        .is_ok()
-        || word.parse::<RelationPredicate>().is_ok();
+    let registered =
+        word.parse::<ClaimPredicate>().is_ok() || word.parse::<RelationPredicate>().is_ok();
     if registered {
         Ok(())
     } else {

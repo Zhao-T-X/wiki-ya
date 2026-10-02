@@ -83,7 +83,8 @@ pub fn run() {
             // 不假装还在运行（用户重开应用后能看到诚实的终态）。
             {
                 let conn = infrastructure::db::open(&db_path)?;
-                let recovered = crate::application::extraction_service::recover_interrupted_runs(&conn)?;
+                let recovered =
+                    crate::application::extraction_service::recover_interrupted_runs(&conn)?;
                 if recovered > 0 {
                     crate::log_warn!(
                         "启动时将 {} 条未完成的抽取 Run 标记为 interrupted",

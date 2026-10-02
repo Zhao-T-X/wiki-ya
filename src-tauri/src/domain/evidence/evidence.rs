@@ -63,11 +63,7 @@ impl EvidenceLevel {
             .iter()
             .copied()
             .find(|level| level.as_u8() == value)
-            .ok_or_else(|| {
-                AppError::Domain(format!(
-                    "证据层级必须是 1..=5，实际为 {value}"
-                ))
-            })
+            .ok_or_else(|| AppError::Domain(format!("证据层级必须是 1..=5，实际为 {value}")))
     }
 }
 
@@ -97,9 +93,7 @@ impl rusqlite::types::ToSql for EvidenceLevel {
 }
 
 impl rusqlite::types::FromSql for EvidenceLevel {
-    fn column_result(
-        value: rusqlite::types::ValueRef<'_>,
-    ) -> rusqlite::types::FromSqlResult<Self> {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
         let raw = value.as_i64()?;
         EvidenceLevel::from_u8(u8::try_from(raw).unwrap_or(0)).map_err(|err| {
             rusqlite::types::FromSqlError::Other(Box::new(std::io::Error::new(
@@ -229,27 +223,13 @@ mod tests {
 
     #[test]
     fn a_good_quote_stays_at_the_cheapest_level() {
-        let decision = choose_level(
-            true,
-            false,
-            Some(0.9),
-            false,
-            false,
-            DEFAULT_MAX_LEVEL,
-        );
+        let decision = choose_level(true, false, Some(0.9), false, false, DEFAULT_MAX_LEVEL);
         assert_eq!(decision.level, EvidenceLevel::Quote);
     }
 
     #[test]
     fn triggers_only_escalate_and_record_the_most_serious_reason() {
-        let decision = choose_level(
-            true,
-            true,
-            Some(0.4),
-            true,
-            false,
-            DEFAULT_MAX_LEVEL,
-        );
+        let decision = choose_level(true, true, Some(0.4), true, false, DEFAULT_MAX_LEVEL);
         assert_eq!(decision.level, EvidenceLevel::Paragraph);
         assert!(decision.reason.contains("矛盾"));
     }
@@ -285,9 +265,6 @@ mod tests {
     fn serde_and_sqlite_roundtrip() {
         let level = EvidenceLevel::Paragraph;
         assert_eq!(serde_json::to_string(&level).unwrap(), "3");
-        assert_eq!(
-            serde_json::from_str::<EvidenceLevel>("3").unwrap(),
-            level
-        );
+        assert_eq!(serde_json::from_str::<EvidenceLevel>("3").unwrap(), level);
     }
 }

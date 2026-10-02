@@ -34,9 +34,7 @@ pub fn table_exists(conn: &Connection, table: &str) -> bool {
 /// 列是否存在。
 pub fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
     conn.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"
-        ),
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"),
         [],
         |row| row.get::<_, i64>(0),
     )
@@ -53,7 +51,9 @@ pub fn count(conn: &Connection, table: &str) -> i64 {
 }
 
 /// 源库的文档行（title/content 必需；content_hash 列可选）。
-pub fn source_documents(conn: &Connection) -> AppResult<Vec<(String, String, String, Option<String>)>> {
+pub fn source_documents(
+    conn: &Connection,
+) -> AppResult<Vec<(String, String, String, Option<String>)>> {
     let has_hash = column_exists(conn, "documents", "content_hash");
     let sql = if has_hash {
         "SELECT id, title, content, content_hash FROM documents ORDER BY rowid"
@@ -82,7 +82,16 @@ pub fn source_documents(conn: &Connection) -> AppResult<Vec<(String, String, Str
 #[allow(clippy::type_complexity)]
 pub fn source_claims(
     conn: &Connection,
-) -> AppResult<Vec<(String, String, Option<String>, Option<String>, Option<String>, Option<String>)>> {
+) -> AppResult<
+    Vec<(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )>,
+> {
     let mut stmt = conn.prepare(
         "SELECT e.name, c.predicate, o.name, c.object_text, c.content, c.document_id \
          FROM claims c \
@@ -123,25 +132,20 @@ pub fn claim_exists(
     predicate: &str,
     object_display: Option<&str>,
 ) -> AppResult<bool> {
-    Ok(conn
-        .query_row(
-            "SELECT EXISTS(\
+    Ok(conn.query_row(
+        "SELECT EXISTS(\
                SELECT 1 FROM claims c \
                JOIN entities e ON e.id = c.subject_id \
                LEFT JOIN entities o ON o.id = c.object_id \
                WHERE e.name = ?1 AND c.predicate = ?2 \
                  AND IFNULL(o.name, c.object_text) IS ?3)",
-            params![subject_name, predicate, object_display],
-            |row| row.get::<_, i64>(0),
-        )?
-        > 0)
+        params![subject_name, predicate, object_display],
+        |row| row.get::<_, i64>(0),
+    )? > 0)
 }
 
 /// 打开只读源库连接。
 pub fn open_source(path: &std::path::Path) -> AppResult<Connection> {
-    Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|err| AppError::Internal(format!("无法打开源库 {path:?}：{err}")))
+    Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|err| AppError::Internal(format!("无法打开源库 {path:?}：{err}")))
 }

@@ -50,7 +50,10 @@ impl SuggestedAction {
     ///
     /// 只有"不改变知识"的动作可以自动化——重复链接与并存事实都属于此类。
     pub fn can_auto_accept(&self) -> bool {
-        matches!(self, SuggestedAction::LinkEvidence | SuggestedAction::KeepBoth)
+        matches!(
+            self,
+            SuggestedAction::LinkEvidence | SuggestedAction::KeepBoth
+        )
     }
 }
 
@@ -208,14 +211,12 @@ pub fn compare_all(new: &ClaimView, existing: &[ClaimView]) -> Vec<Verdict> {
     verdicts.sort_by(|left, right| {
         let left_priority = review_priority(left.relationship.as_str());
         let right_priority = review_priority(right.relationship.as_str());
-        left_priority
-            .cmp(&right_priority)
-            .then_with(|| {
-                right
-                    .confidence
-                    .partial_cmp(&left.confidence)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+        left_priority.cmp(&right_priority).then_with(|| {
+            right
+                .confidence
+                .partial_cmp(&left.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     });
     verdicts
 }
@@ -384,12 +385,36 @@ mod tests {
         // 用各种会造成"知识变更"的组合反复验证：永远不会得到 supersedes。
         let cases = [
             (
-                view("c2", "e1", ClaimPredicate::Is, entity_object("e3"), Polarity::Positive),
-                view("c1", "e1", ClaimPredicate::Is, entity_object("e2"), Polarity::Positive),
+                view(
+                    "c2",
+                    "e1",
+                    ClaimPredicate::Is,
+                    entity_object("e3"),
+                    Polarity::Positive,
+                ),
+                view(
+                    "c1",
+                    "e1",
+                    ClaimPredicate::Is,
+                    entity_object("e2"),
+                    Polarity::Positive,
+                ),
             ),
             (
-                view("c2", "e1", ClaimPredicate::Uses, entity_object("e3"), Polarity::Negative),
-                view("c1", "e1", ClaimPredicate::Uses, entity_object("e3"), Polarity::Positive),
+                view(
+                    "c2",
+                    "e1",
+                    ClaimPredicate::Uses,
+                    entity_object("e3"),
+                    Polarity::Negative,
+                ),
+                view(
+                    "c1",
+                    "e1",
+                    ClaimPredicate::Uses,
+                    entity_object("e3"),
+                    Polarity::Positive,
+                ),
             ),
         ];
         for (new, old) in cases {
@@ -407,15 +432,30 @@ mod tests {
             Polarity::Positive,
         );
         let existing = vec![
-            view("c1", "e1", ClaimPredicate::Uses, entity_object("e3"), Polarity::Positive), // coexists
-            view("c2", "e1", ClaimPredicate::Uses, entity_object("e2"), Polarity::Positive), // duplicate
-            view("c3", "e1", ClaimPredicate::Uses, entity_object("e2"), Polarity::Negative), // contradicts
+            view(
+                "c1",
+                "e1",
+                ClaimPredicate::Uses,
+                entity_object("e3"),
+                Polarity::Positive,
+            ), // coexists
+            view(
+                "c2",
+                "e1",
+                ClaimPredicate::Uses,
+                entity_object("e2"),
+                Polarity::Positive,
+            ), // duplicate
+            view(
+                "c3",
+                "e1",
+                ClaimPredicate::Uses,
+                entity_object("e2"),
+                Polarity::Negative,
+            ), // contradicts
         ];
         let verdicts = compare_all(&new, &existing);
-        let order: Vec<&str> = verdicts
-            .iter()
-            .map(|v| v.relationship.as_str())
-            .collect();
+        let order: Vec<&str> = verdicts.iter().map(|v| v.relationship.as_str()).collect();
         assert_eq!(order, vec!["duplicate", "contradicts", "coexists"]);
     }
 }

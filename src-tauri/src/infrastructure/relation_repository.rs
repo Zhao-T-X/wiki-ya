@@ -135,10 +135,28 @@ mod tests {
     fn insert_is_idempotent_for_the_same_triple() {
         let conn = memory_db();
         let (source, target) = two_entities(&conn);
-        assert!(insert(&conn, &source, RelationPredicate::Uses, &target, None, None, None, None)
-            .unwrap());
-        assert!(!insert(&conn, &source, RelationPredicate::Uses, &target, None, None, None, None)
-            .unwrap());
+        assert!(insert(
+            &conn,
+            &source,
+            RelationPredicate::Uses,
+            &target,
+            None,
+            None,
+            None,
+            None
+        )
+        .unwrap());
+        assert!(!insert(
+            &conn,
+            &source,
+            RelationPredicate::Uses,
+            &target,
+            None,
+            None,
+            None,
+            None
+        )
+        .unwrap());
         assert_eq!(count(&conn).unwrap(), 1);
     }
 
@@ -146,8 +164,17 @@ mod tests {
     fn list_for_entity_returns_both_directions_with_names() {
         let conn = memory_db();
         let (source, target) = two_entities(&conn);
-        insert(&conn, &source, RelationPredicate::Uses, &target, Some(0.9), None, None, None)
-            .unwrap();
+        insert(
+            &conn,
+            &source,
+            RelationPredicate::Uses,
+            &target,
+            Some(0.9),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let from_source = list_for_entity(&conn, &source).unwrap();
         assert_eq!(from_source.len(), 1);
@@ -164,9 +191,22 @@ mod tests {
     fn relation_status_never_contains_superseded() {
         let conn = memory_db();
         let (source, target) = two_entities(&conn);
-        insert(&conn, &source, RelationPredicate::Uses, &target, None, None, None, None).unwrap();
+        insert(
+            &conn,
+            &source,
+            RelationPredicate::Uses,
+            &target,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let result = conn.execute("UPDATE relations SET status = 'superseded'", []);
-        assert!(result.is_err(), "实体关系的生命周期里没有 superseded（决策 D6）");
+        assert!(
+            result.is_err(),
+            "实体关系的生命周期里没有 superseded（决策 D6）"
+        );
     }
 
     #[test]
@@ -185,10 +225,23 @@ mod tests {
     fn deleting_an_entity_cascades_is_blocked_by_foreign_keys() {
         let conn = memory_db();
         let (source, target) = two_entities(&conn);
-        insert(&conn, &source, RelationPredicate::Uses, &target, None, None, None, None).unwrap();
+        insert(
+            &conn,
+            &source,
+            RelationPredicate::Uses,
+            &target,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         // relations 没有声明 ON DELETE，因此删除被引用的实体会被外键阻止：
         // 这是有意的——关系是知识，不该因为删一个实体而静默消失。
-        let result = conn.execute("DELETE FROM entities WHERE id = ?1", params![target.as_str()]);
+        let result = conn.execute(
+            "DELETE FROM entities WHERE id = ?1",
+            params![target.as_str()],
+        );
         assert!(result.is_err());
     }
 }

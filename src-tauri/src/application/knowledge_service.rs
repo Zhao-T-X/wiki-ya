@@ -10,7 +10,7 @@ use rusqlite::Connection;
 
 use crate::application::dto::{
     ClaimCard, ClaimDetail, ClaimRelationCard, CreateClaimInput, EntityCard, EntityDetail,
-    EvidenceCard, GraphEdge, GraphPayload, GraphNode, RelationCard,
+    EvidenceCard, GraphEdge, GraphNode, GraphPayload, RelationCard,
 };
 use crate::domain::common::ids::{ClaimId, DocumentId, EntityId};
 use crate::domain::evidence::evidence::{choose_level, Evidence, DEFAULT_MAX_LEVEL};
@@ -54,10 +54,7 @@ fn to_claim_card(row: &claim_repository::ClaimRow, lifecycle: &str) -> ClaimCard
             _ => None,
         },
         object_name: row.object_name.clone(),
-        object_text: row
-            .object_name
-            .clone()
-            .or(object_text),
+        object_text: row.object_name.clone().or(object_text),
         content: row.claim.content.clone(),
         claim_type: row.claim.claim_type.as_str().to_string(),
         polarity: row.claim.polarity.as_str().to_string(),
@@ -68,7 +65,10 @@ fn to_claim_card(row: &claim_repository::ClaimRow, lifecycle: &str) -> ClaimCard
         valid_from: row.claim.valid_from.clone(),
         valid_until: row.claim.valid_until.clone(),
         observed_at: row.claim.observed_at.clone(),
-        source_document_id: row.source_document_id.as_ref().map(|id| id.as_str().to_string()),
+        source_document_id: row
+            .source_document_id
+            .as_ref()
+            .map(|id| id.as_str().to_string()),
         source_document_title: row.source_document_title.clone(),
         source_quote: row.source_quote.clone(),
         evidence_count: row.evidence_count,
@@ -356,7 +356,9 @@ pub fn get_claim(conn: &Connection, id: &ClaimId) -> AppResult<ClaimDetail> {
 
 /// 关系行 → IPC 卡片。供本模块与 review / evolution 用例共用，
 /// 避免同一份映射逻辑出现三份（三份就会漂移）。
-pub fn to_relation_card_dto(row: &claim_relation_repository::ClaimRelationRow) -> ClaimRelationCard {
+pub fn to_relation_card_dto(
+    row: &claim_relation_repository::ClaimRelationRow,
+) -> ClaimRelationCard {
     ClaimRelationCard {
         id: row.id.as_str().to_string(),
         source_claim_id: row.source_claim_id.as_str().to_string(),
@@ -418,33 +420,59 @@ pub fn list_evidence(conn: &Connection, claim_id: &ClaimId) -> AppResult<Vec<Evi
 /// `unresolved_objects` 指标统计出来，提醒用户去归类。
 pub fn create_claim(conn: &mut Connection, input: CreateClaimInput) -> AppResult<ClaimCard> {
     let predicate = ClaimPredicate::canonical(&input.predicate)?;
-    let claim_type = match input.claim_type.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let claim_type = match input
+        .claim_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         None => ClaimType::DEFAULT,
         Some(raw) => ClaimType::canonical(raw)?,
     };
-    let polarity = match input.polarity.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let polarity = match input
+        .polarity
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         None => Polarity::DEFAULT,
         Some(raw) => Polarity::canonical(raw)?,
     };
-    let modality = match input.modality.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let modality = match input
+        .modality
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         None => Modality::DEFAULT,
         Some(raw) => Modality::canonical(raw)?,
     };
-    let status = match input.status.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let status = match input
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         None => ClaimStatus::DEFAULT,
         Some(raw) => raw.parse::<ClaimStatus>()?,
     };
     let confidence = Claim::validate_confidence(input.confidence)?;
 
     let document_id = DocumentId::from_raw(input.document_id.trim());
-    let document = document_repository::find_by_id(conn, &document_id)?
-        .ok_or_else(|| AppError::NotFound(format!("文档 {document_id} 不存在，证据必须指向真实来源")))?;
+    let document = document_repository::find_by_id(conn, &document_id)?.ok_or_else(|| {
+        AppError::NotFound(format!("文档 {document_id} 不存在，证据必须指向真实来源"))
+    })?;
 
     let transaction = conn.transaction()?;
 
     let subject = entity_repository::resolve_or_create(&transaction, &input.subject)?;
 
-    let object = match input.object.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let object = match input
+        .object
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         None => None,
         Some(raw) => {
             // 只在**已存在**时才建立实体引用；否则存自由文本（见函数文档）。
@@ -599,7 +627,12 @@ mod tests {
         DocumentId::from_raw(summary.id)
     }
 
-    fn manual(subject: &str, predicate: &str, object: Option<&str>, document: &DocumentId) -> CreateClaimInput {
+    fn manual(
+        subject: &str,
+        predicate: &str,
+        object: Option<&str>,
+        document: &DocumentId,
+    ) -> CreateClaimInput {
         CreateClaimInput {
             subject: subject.into(),
             predicate: predicate.into(),
@@ -645,7 +678,8 @@ mod tests {
     fn unregistered_predicates_are_rejected_on_manual_entry_too() {
         let mut conn = memory_db();
         let document = seed_document(&mut conn, "body");
-        let err = create_claim(&mut conn, manual("Rust", "vibes_with", None, &document)).unwrap_err();
+        let err =
+            create_claim(&mut conn, manual("Rust", "vibes_with", None, &document)).unwrap_err();
         assert_eq!(err.code(), "DOMAIN_RULE_VIOLATION");
     }
 
@@ -724,7 +758,8 @@ mod tests {
     fn claim_detail_lifecycle_is_derived_not_copied() {
         let mut conn = memory_db();
         let document = seed_document(&mut conn, "body");
-        let card = create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
+        let card =
+            create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
         assert_eq!(card.lifecycle, "current");
 
         conn.execute(
@@ -740,7 +775,8 @@ mod tests {
     fn excluded_claims_are_not_reported_as_history() {
         let mut conn = memory_db();
         let document = seed_document(&mut conn, "body");
-        let card = create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
+        let card =
+            create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
 
         // rejected 不参与检索，但它是「错误」而非「历史」。
         conn.execute(
@@ -765,8 +801,11 @@ mod tests {
         let card = create_claim(&mut conn, with_time).unwrap();
         assert_eq!(card.observed_at.as_deref(), Some("2024-03-01 00:00:00"));
 
-        let without_time =
-            create_claim(&mut conn, manual("Rust", "supports", Some("WASM"), &document)).unwrap();
+        let without_time = create_claim(
+            &mut conn,
+            manual("Rust", "supports", Some("WASM"), &document),
+        )
+        .unwrap();
         assert!(
             without_time.observed_at.is_none(),
             "没有明确时间时必须留空，不能自动填当前时间"
@@ -781,7 +820,8 @@ mod tests {
     fn temporal_contract_defaults_are_honest() {
         let mut conn = memory_db();
         let document = seed_document(&mut conn, "body");
-        let card = create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
+        let card =
+            create_claim(&mut conn, manual("Rust", "uses", Some("SQLite"), &document)).unwrap();
 
         assert!(card.valid_from.is_none(), "valid_from 不应被自动推断");
         assert!(card.valid_until.is_none(), "valid_until 不应被自动推断");
@@ -793,14 +833,20 @@ mod tests {
     fn entity_detail_includes_aliases_claims_relations_and_graph() {
         let mut conn = memory_db();
         let document = seed_document(&mut conn, "body");
-        let card = create_claim(&mut conn, manual("wiki-ya", "uses", Some("SQLite"), &document)).unwrap();
+        let card = create_claim(
+            &mut conn,
+            manual("wiki-ya", "uses", Some("SQLite"), &document),
+        )
+        .unwrap();
         let entity_id = EntityId::from_raw(&card.subject_id);
         entity_repository::insert_alias(&conn, &entity_id, "wiki ya").unwrap();
 
         // 造一条实体关系（直接写表，因为 Phase 1 还没有抽取路径）。
         // 注意：未知宾语不会自动落成实体，所以这里先显式把 SQLite 建成实体。
         entity_repository::resolve_or_create(&conn, "SQLite").unwrap();
-        let sqlite = entity_repository::find_by_name(&conn, "SQLite").unwrap().unwrap();
+        let sqlite = entity_repository::find_by_name(&conn, "SQLite")
+            .unwrap()
+            .unwrap();
         relation_repository::insert(
             &conn,
             &entity_id,
@@ -828,15 +874,21 @@ mod tests {
         let mut conn = memory_db();
         let _ = seed_document(&mut conn, "body");
         assert_eq!(
-            get_entity(&conn, &EntityId::from_raw("nope"), 1).unwrap_err().code(),
+            get_entity(&conn, &EntityId::from_raw("nope"), 1)
+                .unwrap_err()
+                .code(),
             "NOT_FOUND"
         );
         assert_eq!(
-            get_claim(&conn, &ClaimId::from_raw("nope")).unwrap_err().code(),
+            get_claim(&conn, &ClaimId::from_raw("nope"))
+                .unwrap_err()
+                .code(),
             "NOT_FOUND"
         );
         assert_eq!(
-            get_claim_history(&conn, &ClaimId::from_raw("nope")).unwrap_err().code(),
+            get_claim_history(&conn, &ClaimId::from_raw("nope"))
+                .unwrap_err()
+                .code(),
             "NOT_FOUND"
         );
     }
@@ -875,7 +927,8 @@ mod tests {
         assert_eq!(evidence[0].evidence_level_name, "quote");
 
         // 无引文 → 退回段落级
-        let without_quote = create_claim(&mut conn, manual("Rust", "uses", None, &document)).unwrap();
+        let without_quote =
+            create_claim(&mut conn, manual("Rust", "uses", None, &document)).unwrap();
         let evidence = list_evidence(&conn, &ClaimId::from_raw(&without_quote.id)).unwrap();
         assert_eq!(evidence[0].evidence_level, 3);
         assert_eq!(evidence[0].evidence_level_name, "paragraph");
@@ -892,7 +945,9 @@ mod tests {
         assert_eq!(existing.len(), 1);
         evidence_repository::insert(&conn, &existing[0]).unwrap();
         assert_eq!(
-            evidence_repository::list_for_claim(&conn, &claim_id).unwrap().len(),
+            evidence_repository::list_for_claim(&conn, &claim_id)
+                .unwrap()
+                .len(),
             1,
             "重复写入同一证据应被忽略"
         );
@@ -904,7 +959,10 @@ mod tests {
         let document = seed_document(&mut conn, "body");
         let mut input = manual("Rust", "uses", None, &document);
         input.chunk_id = Some("not-a-chunk".into());
-        assert_eq!(create_claim(&mut conn, input).unwrap_err().code(), "NOT_FOUND");
+        assert_eq!(
+            create_claim(&mut conn, input).unwrap_err().code(),
+            "NOT_FOUND"
+        );
     }
 
     #[test]
@@ -926,7 +984,8 @@ mod tests {
             manual("Rust", "uses", None, &DocumentId::from_raw(summary.id)),
         )
         .unwrap();
-        let evidence = evidence_repository::list_for_claim(&conn, &ClaimId::from_raw(&card.id)).unwrap();
+        let evidence =
+            evidence_repository::list_for_claim(&conn, &ClaimId::from_raw(&card.id)).unwrap();
         assert_eq!(evidence[0].source_type, SourceType::Markdown);
     }
 

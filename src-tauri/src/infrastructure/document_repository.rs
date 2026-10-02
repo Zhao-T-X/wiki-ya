@@ -275,8 +275,11 @@ mod tests {
         replace_chunks(&conn, &doc.id, &chunk_document(&doc.content)).unwrap();
         assert_eq!(count_chunks(&conn).unwrap(), 1);
 
-        conn.execute("DELETE FROM documents WHERE id=?1", params![doc.id.as_str()])
-            .unwrap();
+        conn.execute(
+            "DELETE FROM documents WHERE id=?1",
+            params![doc.id.as_str()],
+        )
+        .unwrap();
         assert_eq!(count_chunks(&conn).unwrap(), 0);
     }
 

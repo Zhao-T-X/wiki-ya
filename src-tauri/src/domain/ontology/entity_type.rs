@@ -97,9 +97,18 @@ mod tests {
 
     #[test]
     fn legacy_project_maps_to_resource_not_product() {
-        assert_eq!(EntityType::canonical("project").unwrap(), EntityType::Resource);
-        assert_eq!(EntityType::canonical("PLACE").unwrap(), EntityType::Location);
-        assert_eq!(EntityType::canonical("Software").unwrap(), EntityType::Software);
+        assert_eq!(
+            EntityType::canonical("project").unwrap(),
+            EntityType::Resource
+        );
+        assert_eq!(
+            EntityType::canonical("PLACE").unwrap(),
+            EntityType::Location
+        );
+        assert_eq!(
+            EntityType::canonical("Software").unwrap(),
+            EntityType::Software
+        );
     }
 
     #[test]

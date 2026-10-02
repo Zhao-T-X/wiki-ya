@@ -9,9 +9,8 @@ use crate::application::dto::{
     AiSettings, AppInfo, EntityTypeOption, HealthReport, Registries, RelationPredicateOption,
     UpdateAiSettings,
 };
-use crate::infrastructure::secrets;
-use crate::infrastructure::settings_repository;
 use crate::domain::evidence::evidence::EvidenceLevel;
+use crate::domain::evolution::classifier::{ClaimRelationStatus, ClaimRelationType};
 use crate::domain::knowledge::claim::{ClaimStatus, ClaimType, Modality, Polarity};
 use crate::domain::knowledge::document::SourceType;
 use crate::domain::knowledge::idea::IdeaStatus;
@@ -24,11 +23,12 @@ use crate::domain::ontology::predicate::ClaimPredicate;
 use crate::domain::ontology::registry;
 use crate::domain::ontology::relation::RelationStatus;
 use crate::domain::ontology::resolution::EntityResolutionStep;
-use crate::domain::evolution::classifier::{ClaimRelationStatus, ClaimRelationType};
 use crate::domain::review::review::ReviewTarget;
 use crate::domain::search::search::{SearchHitKind, SearchMethod};
 use crate::error::AppResult;
 use crate::infrastructure::db::{self, count_rows};
+use crate::infrastructure::secrets;
+use crate::infrastructure::settings_repository;
 use crate::infrastructure::{
     claim_relation_repository, claim_repository, document_repository, entity_repository,
     evidence_repository,
@@ -143,9 +143,7 @@ pub fn list_registries() -> AppResult<Registries> {
         event_types: strings(EventType::ALL.iter().map(|v| v.as_str())),
         event_statuses: strings(EventStatus::ALL.iter().map(|v| v.as_str())),
         event_time_precisions: strings(EventTimePrecision::ALL.iter().map(|v| v.as_str())),
-        research_task_statuses: strings(
-            ["open", "running", "completed", "failed"].into_iter(),
-        ),
+        research_task_statuses: strings(["open", "running", "completed", "failed"].into_iter()),
         source_types: strings(SourceType::ALL.iter().map(|v| v.as_str())),
         claim_relation_types: strings(ClaimRelationType::ALL.iter().map(|v| v.as_str())),
         claim_relation_statuses: strings(ClaimRelationStatus::ALL.iter().map(|v| v.as_str())),
@@ -153,7 +151,15 @@ pub fn list_registries() -> AppResult<Registries> {
         entity_resolution_steps: strings(EntityResolutionStep::ALL.iter().map(|v| v.as_str())),
         load_strategies: strings(["LOAD", "SUMMARIZE", "RETRIEVE_LATER", "NEVER_LOAD"].into_iter()),
         agent_roles: strings(
-            ["personal", "knowledge", "research", "curator", "review", "extractor"].into_iter(),
+            [
+                "personal",
+                "knowledge",
+                "research",
+                "curator",
+                "review",
+                "extractor",
+            ]
+            .into_iter(),
         ),
         registry_version: registry::version().to_string(),
     })
@@ -196,7 +202,14 @@ pub fn knowledge_health(conn: &Connection) -> AppResult<HealthReport> {
 /// 全库计数（供测试与诊断使用）。
 pub fn total_rows(conn: &Connection) -> AppResult<Vec<(&'static str, i64)>> {
     let mut rows = Vec::new();
-    for table in ["documents", "chunks", "entities", "claims", "evidence", "relations"] {
+    for table in [
+        "documents",
+        "chunks",
+        "entities",
+        "claims",
+        "evidence",
+        "relations",
+    ] {
         rows.push((table, count_rows(conn, table)?));
     }
     Ok(rows)

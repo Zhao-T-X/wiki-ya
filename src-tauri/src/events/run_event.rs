@@ -13,18 +13,16 @@ use crate::domain::run::RunType;
 
 /// 一次 Run 生命周期中的统一事件。
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RunEvent {
     /// Run 开始执行（queued → running）。
-    Started {
-        run_id: String,
-        run_type: RunType,
-    },
+    Started { run_id: String, run_type: RunType },
     /// 阶段变化（各类型自行定义阶段字面量）。
-    StageChanged {
-        run_id: String,
-        stage: String,
-    },
+    StageChanged { run_id: String, stage: String },
     /// 进度推进（如抽取的 processed/total 块）。
     Progress {
         run_id: String,
@@ -32,10 +30,7 @@ pub enum RunEvent {
         total: usize,
     },
     /// 流式文本增量（Ask 回答 / Research Findings 的打字机效果）。
-    TokenDelta {
-        run_id: String,
-        delta: String,
-    },
+    TokenDelta { run_id: String, delta: String },
     /// 一次工具调用开始。
     ToolCalled {
         run_id: String,
@@ -50,28 +45,15 @@ pub enum RunEvent {
         summary: String,
     },
     /// 产出了候选知识（抽取/Skill 产物）。
-    CandidateCreated {
-        run_id: String,
-        count: usize,
-    },
+    CandidateCreated { run_id: String, count: usize },
     /// 产生了演化 / 纠正提案（进入 Review）。
-    ProposalCreated {
-        run_id: String,
-        count: usize,
-    },
+    ProposalCreated { run_id: String, count: usize },
     /// 成功完成。
-    Completed {
-        run_id: String,
-    },
+    Completed { run_id: String },
     /// 失败终止。
-    Failed {
-        run_id: String,
-        error: String,
-    },
+    Failed { run_id: String, error: String },
     /// 用户取消。
-    Cancelled {
-        run_id: String,
-    },
+    Cancelled { run_id: String },
 }
 
 /// Run 事件接收端（与 `EventSink` 同构）：Commands 层注入 Tauri 发射器，

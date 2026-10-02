@@ -48,7 +48,11 @@ pub fn retrieve(
 }
 
 /// 词法检索（现有 search_service）。
-pub fn lexical_search(conn: &Connection, query: &str, limit: usize) -> AppResult<Vec<RetrievedPassage>> {
+pub fn lexical_search(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<RetrievedPassage>> {
     let input = SearchInput {
         query: query.to_string(),
         limit: Some(limit),
@@ -138,7 +142,11 @@ fn fuse_rrf(
         })
         .collect();
 
-    result.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    result.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     result.into_iter().take(limit).collect()
 }
 

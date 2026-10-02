@@ -146,11 +146,7 @@ pub fn now(conn: &Connection) -> AppResult<String> {
 pub fn json_col(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<serde_json::Value> {
     let raw: String = row.get(index)?;
     serde_json::from_str(&raw).map_err(|err| {
-        rusqlite::Error::FromSqlConversionFailure(
-            index,
-            rusqlite::types::Type::Text,
-            Box::new(err),
-        )
+        rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(err))
     })
 }
 
@@ -158,11 +154,7 @@ pub fn json_col(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<serde
 pub fn string_list_col(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Vec<String>> {
     let raw: String = row.get(index)?;
     serde_json::from_str(&raw).map_err(|err| {
-        rusqlite::Error::FromSqlConversionFailure(
-            index,
-            rusqlite::types::Type::Text,
-            Box::new(err),
-        )
+        rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(err))
     })
 }
 
@@ -182,11 +174,7 @@ where
 {
     let raw: String = row.get(index)?;
     raw.parse::<T>().map_err(|err| {
-        rusqlite::Error::FromSqlConversionFailure(
-            index,
-            rusqlite::types::Type::Text,
-            Box::new(err),
-        )
+        rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(err))
     })
 }
 
@@ -403,11 +391,9 @@ pub(crate) mod tests {
             [],
         )
         .unwrap();
-        let result = conn.query_row(
-            "SELECT types_json FROM entities WHERE id='e1'",
-            [],
-            |row| string_list_col(row, 0),
-        );
+        let result = conn.query_row("SELECT types_json FROM entities WHERE id='e1'", [], |row| {
+            string_list_col(row, 0)
+        });
         assert!(result.is_err(), "损坏的 JSON 必须报错而不是返回空集");
     }
 }

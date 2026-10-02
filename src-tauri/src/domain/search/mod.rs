@@ -6,6 +6,4 @@
 
 pub mod search;
 
-pub use search::{
-    rrf_fuse, RetrievalBudget, SearchHitKind, SearchMethod, RankedItem, RRF_K,
-};
+pub use search::{rrf_fuse, RankedItem, RetrievalBudget, SearchHitKind, SearchMethod, RRF_K};

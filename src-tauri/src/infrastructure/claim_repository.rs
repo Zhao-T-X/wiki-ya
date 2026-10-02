@@ -54,13 +54,15 @@ impl ClaimRow {
         let object = self
             .object_name
             .clone()
-            .or_else(|| self.claim.object.as_ref().and_then(|o| match o {
-                ClaimObject::Literal(text) => Some(text.clone()),
-                ClaimObject::Number(value) => Some(value.to_string()),
-                ClaimObject::Boolean(value) => Some(value.to_string()),
-                ClaimObject::Date(value) => Some(value.clone()),
-                ClaimObject::Entity(_) => None,
-            }))
+            .or_else(|| {
+                self.claim.object.as_ref().and_then(|o| match o {
+                    ClaimObject::Literal(text) => Some(text.clone()),
+                    ClaimObject::Number(value) => Some(value.to_string()),
+                    ClaimObject::Boolean(value) => Some(value.to_string()),
+                    ClaimObject::Date(value) => Some(value.clone()),
+                    ClaimObject::Entity(_) => None,
+                })
+            })
             .unwrap_or_default();
         format!("{} {} {}", self.subject_name, self.claim.predicate, object)
             .trim()
@@ -131,9 +133,7 @@ fn map_claim(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClaimRow> {
         claim,
         subject_name: row.get(17)?,
         object_name: row.get(18)?,
-        source_document_id: row
-            .get::<_, Option<String>>(19)?
-            .map(DocumentId::from_raw),
+        source_document_id: row.get::<_, Option<String>>(19)?.map(DocumentId::from_raw),
         source_document_title: row.get(20)?,
         source_quote: row.get(21)?,
         evidence_count: row.get(22)?,
@@ -287,10 +287,8 @@ pub fn get_many(conn: &Connection, ids: &[ClaimId]) -> AppResult<Vec<ClaimRow>> 
         .join(",");
     let sql = format!("{CLAIM_SELECT} WHERE c.id IN ({placeholders})");
     let mut statement = conn.prepare(&sql)?;
-    let params: Vec<&dyn rusqlite::ToSql> = ids
-        .iter()
-        .map(|id| id as &dyn rusqlite::ToSql)
-        .collect();
+    let params: Vec<&dyn rusqlite::ToSql> =
+        ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
     let rows = statement.query_map(params.as_slice(), map_claim)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
@@ -415,10 +413,7 @@ mod tests {
         assert_eq!(loaded.object_name.as_deref(), Some("SQLite"));
         assert_eq!(loaded.subject_name, "Rust");
         assert_eq!(loaded.claim.confidence, Some(0.9));
-        assert_eq!(
-            loaded.claim.object,
-            Some(ClaimObject::Entity(object_id))
-        );
+        assert_eq!(loaded.claim.object, Some(ClaimObject::Entity(object_id)));
         assert_eq!(loaded.evidence_count, 0);
     }
 
@@ -429,8 +424,11 @@ mod tests {
         let loaded = get(&conn, &claim.id).unwrap().unwrap();
         assert_eq!(loaded.display_text(), "Rust uses SQLite");
 
-        conn.execute("UPDATE claims SET content = NULL WHERE id = ?1", params![claim.id.as_str()])
-            .unwrap();
+        conn.execute(
+            "UPDATE claims SET content = NULL WHERE id = ?1",
+            params![claim.id.as_str()],
+        )
+        .unwrap();
         let without_content = get(&conn, &claim.id).unwrap().unwrap();
         assert_eq!(without_content.display_text(), "Rust uses SQLite");
     }
@@ -526,8 +524,14 @@ mod tests {
         };
         insert(&conn, &same).unwrap();
 
-        let candidates =
-            find_candidates(&conn, &subject_id, ClaimPredicate::Uses, Some(&claim.id), 10).unwrap();
+        let candidates = find_candidates(
+            &conn,
+            &subject_id,
+            ClaimPredicate::Uses,
+            Some(&claim.id),
+            10,
+        )
+        .unwrap();
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].claim.id, same.id);
 
@@ -536,11 +540,15 @@ mod tests {
             params![same.id.as_str()],
         )
         .unwrap();
-        assert!(
-            find_candidates(&conn, &subject_id, ClaimPredicate::Uses, Some(&claim.id), 10)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(find_candidates(
+            &conn,
+            &subject_id,
+            ClaimPredicate::Uses,
+            Some(&claim.id),
+            10
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]

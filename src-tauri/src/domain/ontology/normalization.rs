@@ -184,7 +184,11 @@ pub fn classify(candidate: &RelationCandidate) -> NormalizationDecision {
                 }
             }
             "source_target_types_allowed" => {
-                if let Some(spec) = reg.relation_specs.iter().find(|s| s.predicate == normalized) {
+                if let Some(spec) = reg
+                    .relation_specs
+                    .iter()
+                    .find(|s| s.predicate == normalized)
+                {
                     let source_ok = !candidate.source_types.is_empty()
                         && candidate
                             .source_types
@@ -267,10 +271,7 @@ mod tests {
         let mut candidate = fully_satisfied("develops");
         candidate.object_resolves_to_entity = false;
         let decision = classify(&candidate);
-        assert_eq!(
-            decision.outcome,
-            NormalizationOutcome::ConditionalRelation
-        );
+        assert_eq!(decision.outcome, NormalizationOutcome::ConditionalRelation);
         assert!(!decision.allows_relation_row());
         assert!(decision.reasons.iter().any(|r| r.contains("宾语")));
     }
@@ -288,10 +289,7 @@ mod tests {
         let mut candidate = fully_satisfied("uses");
         candidate.positive_polarity = false;
         let decision = classify(&candidate);
-        assert_eq!(
-            decision.outcome,
-            NormalizationOutcome::ConditionalRelation
-        );
+        assert_eq!(decision.outcome, NormalizationOutcome::ConditionalRelation);
         assert!(decision.reasons.iter().any(|r| r.contains("极性")));
     }
 

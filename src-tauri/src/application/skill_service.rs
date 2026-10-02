@@ -24,9 +24,9 @@ use crate::application::ai_service;
 use crate::application::ask_service;
 use crate::application::dto::{AskRequest, SkillDescriptorDto};
 use crate::application::evolution_service;
+use crate::domain::common::ids::DocumentId;
 use crate::domain::extraction::ExtractionRunStatus;
 use crate::domain::run::RunType;
-use crate::domain::common::ids::DocumentId;
 use crate::domain::skill::{SkillDefinition, SkillName};
 use crate::error::{AppError, AppResult};
 use crate::events::{RunEvent, RunSink};
@@ -209,7 +209,13 @@ pub fn start_skill(
         })
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = execute_skill_run(&db_path, &run_id_for_task, &name_for_task, input, &run_events);
+        let _ = execute_skill_run(
+            &db_path,
+            &run_id_for_task,
+            &name_for_task,
+            input,
+            &run_events,
+        );
     });
 
     Ok(run_id)
@@ -271,61 +277,61 @@ fn execute_inner(
     // 内置 Skill：确定性服务包装（M2）。
     if let Ok(skill) = SkillName::from_str(name) {
         return match skill {
-        SkillName::KnowledgeExtraction => {
-            let document_id = input_string(&input, "documentId")?;
-            let report = ai_service::extract_claims(conn, &document_id)?;
-            let accepted = report.extracted.iter().filter(|c| c.accepted).count();
-            sink(&RunEvent::CandidateCreated {
-                run_id: run_id.to_string(),
-                count: accepted,
-            });
-            Ok(json!({
-                "candidates": accepted,
-                "total": report.extracted.len(),
-                "enabled": report.enabled,
-            }))
-        }
-        SkillName::KnowledgeAnswering => {
-            let question = input_string(&input, "question")?;
-            let role = input
-                .get("role")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let request = AskRequest {
-                question,
-                role,
-                // 复用 skill run_id 作为流式事件 id：前端订阅 run-events 即可看到增量。
-                run_id: Some(run_id.to_string()),
-            };
-            let response = ask_service::ask(conn, request, Some(sink))?;
-            Ok(json!({
-                "answer": response.answer,
-                "sources": response.sources.len(),
-                "enabled": response.enabled,
-            }))
-        }
-        SkillName::KnowledgeCorrection => {
-            let document_id = input_string(&input, "documentId")?;
-            let analysis =
-                evolution_service::analyze_document(conn, &DocumentId::from_raw(&document_id))?;
-            sink(&RunEvent::ProposalCreated {
-                run_id: run_id.to_string(),
-                count: analysis.relations_written as usize,
-            });
-            // M10：提案明细（id/关系/理由）写进 Run metadata——
-            // Review 队列可决策，Trace 可回看"当时提了什么、为什么"。
-            Ok(json!({
-                "proposals": analysis.relations_written,
-                "scanned": analysis.claims_scanned,
-                "relations": analysis.verdicts.iter().map(|v| json!({
-                    "id": v.id,
-                    "relationship": v.relationship,
-                    "status": v.status,
-                    "reason": v.reason,
-                    "suggestedAction": v.suggested_action,
-                })).collect::<Vec<_>>(),
-            }))
-        }
+            SkillName::KnowledgeExtraction => {
+                let document_id = input_string(&input, "documentId")?;
+                let report = ai_service::extract_claims(conn, &document_id)?;
+                let accepted = report.extracted.iter().filter(|c| c.accepted).count();
+                sink(&RunEvent::CandidateCreated {
+                    run_id: run_id.to_string(),
+                    count: accepted,
+                });
+                Ok(json!({
+                    "candidates": accepted,
+                    "total": report.extracted.len(),
+                    "enabled": report.enabled,
+                }))
+            }
+            SkillName::KnowledgeAnswering => {
+                let question = input_string(&input, "question")?;
+                let role = input
+                    .get("role")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let request = AskRequest {
+                    question,
+                    role,
+                    // 复用 skill run_id 作为流式事件 id：前端订阅 run-events 即可看到增量。
+                    run_id: Some(run_id.to_string()),
+                };
+                let response = ask_service::ask(conn, request, Some(sink))?;
+                Ok(json!({
+                    "answer": response.answer,
+                    "sources": response.sources.len(),
+                    "enabled": response.enabled,
+                }))
+            }
+            SkillName::KnowledgeCorrection => {
+                let document_id = input_string(&input, "documentId")?;
+                let analysis =
+                    evolution_service::analyze_document(conn, &DocumentId::from_raw(&document_id))?;
+                sink(&RunEvent::ProposalCreated {
+                    run_id: run_id.to_string(),
+                    count: analysis.relations_written as usize,
+                });
+                // M10：提案明细（id/关系/理由）写进 Run metadata——
+                // Review 队列可决策，Trace 可回看"当时提了什么、为什么"。
+                Ok(json!({
+                    "proposals": analysis.relations_written,
+                    "scanned": analysis.claims_scanned,
+                    "relations": analysis.verdicts.iter().map(|v| json!({
+                        "id": v.id,
+                        "relationship": v.relationship,
+                        "status": v.status,
+                        "reason": v.reason,
+                        "suggestedAction": v.suggested_action,
+                    })).collect::<Vec<_>>(),
+                }))
+            }
         };
     }
 
@@ -335,11 +341,7 @@ fn execute_inner(
 }
 
 /// 自定义 Skill 的通用执行：instructions 作系统提示，输入文本作用户消息。
-fn generic_prompt_execute(
-    conn: &mut Connection,
-    name: &str,
-    input: &Value,
-) -> AppResult<Value> {
+fn generic_prompt_execute(conn: &mut Connection, name: &str, input: &Value) -> AppResult<Value> {
     let definition = resolve(conn, name)?;
     let provider = default_provider(conn);
     if !provider.enabled() {
@@ -362,11 +364,9 @@ fn generic_prompt_execute(
                 .ok_or_else(|| {
                     AppError::Domain("自定义 Skill 输入缺少 `text` 或 `documentId`".into())
                 })?;
-            let document = document_repository::find_by_id(
-                conn,
-                &DocumentId::from_raw(document_id),
-            )?
-            .ok_or_else(|| AppError::NotFound(format!("文档 {document_id} 不存在")))?;
+            let document =
+                document_repository::find_by_id(conn, &DocumentId::from_raw(document_id))?
+                    .ok_or_else(|| AppError::NotFound(format!("文档 {document_id} 不存在")))?;
             document.content
         }
     };
@@ -392,9 +392,13 @@ fn input_string(input: &Value, key: &str) -> AppResult<String> {
 fn parse_skill_md(text: &str) -> AppResult<ParsedSkillMd> {
     let mut parts = text.trim().splitn(3, "---");
     if parts.next().map(str::trim) != Some("") {
-        return Err(AppError::Domain("SKILL.md 缺少 frontmatter 开始标记".into()));
+        return Err(AppError::Domain(
+            "SKILL.md 缺少 frontmatter 开始标记".into(),
+        ));
     }
-    let fm = parts.next().ok_or_else(|| AppError::Domain("SKILL.md 缺少 frontmatter".into()))?;
+    let fm = parts
+        .next()
+        .ok_or_else(|| AppError::Domain("SKILL.md 缺少 frontmatter".into()))?;
     let instructions = parts.next().unwrap_or_default().trim().to_string();
 
     let mut fields: std::collections::HashMap<String, String> = Default::default();
@@ -425,7 +429,10 @@ fn parse_skill_md(text: &str) -> AppResult<ParsedSkillMd> {
                     .map(|item| item.trim().to_string())
                     .filter(|item| !item.is_empty())
                     .collect();
-                fields.insert(key, serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()));
+                fields.insert(
+                    key,
+                    serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()),
+                );
             } else {
                 fields.insert(key, value.to_string());
             }
@@ -531,14 +538,8 @@ mod tests {
             .unwrap();
         }
 
-        let err = execute_skill_run(
-            &db_path,
-            run_id,
-            "knowledge-extraction",
-            json!({}),
-            &sink,
-        )
-        .unwrap_err();
+        let err = execute_skill_run(&db_path, run_id, "knowledge-extraction", json!({}), &sink)
+            .unwrap_err();
         assert!(err.to_string().contains("documentId"));
 
         let conn = db::open(&db_path).unwrap();
@@ -670,7 +671,9 @@ pub fn create_skill(
 ) -> AppResult<()> {
     crate::domain::skill::validate_custom_name(name).map_err(AppError::Domain)?;
     if description.trim().is_empty() || instructions.trim().is_empty() {
-        return Err(AppError::Domain("description 与 instructions 不能为空".into()));
+        return Err(AppError::Domain(
+            "description 与 instructions 不能为空".into(),
+        ));
     }
     let exists: bool = conn
         .query_row(
@@ -707,7 +710,9 @@ pub fn update_skill(
         return Err(AppError::Domain("内置 Skill 不可修改".into()));
     }
     if description.trim().is_empty() || instructions.trim().is_empty() {
-        return Err(AppError::Domain("description 与 instructions 不能为空".into()));
+        return Err(AppError::Domain(
+            "description 与 instructions 不能为空".into(),
+        ));
     }
     let current: i64 = conn
         .query_row(

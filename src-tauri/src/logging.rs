@@ -153,7 +153,10 @@ mod tests {
 
     #[test]
     fn redacts_bearer_tokens_and_openai_keys() {
-        assert_eq!(redact("Authorization: Bearer abc.def-123_XYZ"), "Authorization: Bearer ***");
+        assert_eq!(
+            redact("Authorization: Bearer abc.def-123_XYZ"),
+            "Authorization: Bearer ***"
+        );
         assert_eq!(redact("key=sk-abcdef123456"), "key=sk-***");
     }
 
@@ -167,7 +170,10 @@ mod tests {
 
     #[test]
     fn keeps_ordinary_text_intact() {
-        assert_eq!(redact("model=gpt-4o-mini max_tokens=8192"), "model=gpt-4o-mini max_tokens=8192");
+        assert_eq!(
+            redact("model=gpt-4o-mini max_tokens=8192"),
+            "model=gpt-4o-mini max_tokens=8192"
+        );
     }
 }
 

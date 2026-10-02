@@ -10,12 +10,11 @@
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::application::dto::{
-    AgentEventDto, CandidateNodeDto, ClaimTraceDto, EvolutionNodeDto, EvidenceNodeDto,
-    RunTraceDto,
+    AgentEventDto, CandidateNodeDto, ClaimTraceDto, EvidenceNodeDto, EvolutionNodeDto, RunTraceDto,
 };
+use crate::application::extraction_service;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
-use crate::application::extraction_service;
 use crate::infrastructure::{extraction_run_repository, run_repository};
 
 /// 读取一条 Run 的完整 Trace。不存在时返回 NotFound。

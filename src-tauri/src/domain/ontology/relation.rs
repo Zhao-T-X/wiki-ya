@@ -190,6 +190,8 @@ mod tests {
 
     #[test]
     fn relation_status_has_no_superseded() {
-        assert!(!RelationStatus::ALL.iter().any(|s| s.as_str() == "superseded"));
+        assert!(!RelationStatus::ALL
+            .iter()
+            .any(|s| s.as_str() == "superseded"));
     }
 }

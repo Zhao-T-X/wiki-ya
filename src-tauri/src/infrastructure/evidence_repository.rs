@@ -97,12 +97,14 @@ pub fn count_for_document(conn: &Connection, document_id: &DocumentId) -> AppRes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::knowledge::chunk::chunk_document;
+    use crate::domain::knowledge::claim::{
+        Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity,
+    };
+    use crate::domain::knowledge::document::Document;
+    use crate::domain::ontology::predicate::ClaimPredicate;
     use crate::infrastructure::db::tests::memory_db;
     use crate::infrastructure::{claim_repository, document_repository, entity_repository};
-    use crate::domain::knowledge::chunk::chunk_document;
-    use crate::domain::knowledge::document::Document;
-    use crate::domain::knowledge::claim::{Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity};
-    use crate::domain::ontology::predicate::ClaimPredicate;
 
     fn seed_claim(conn: &Connection) -> (ClaimId, DocumentId, ChunkId) {
         let subject = entity_repository::resolve_or_create(conn, "Rust").unwrap();
@@ -148,7 +150,12 @@ mod tests {
         (claim.id, document.id, chunk_id)
     }
 
-    fn evidence(claim_id: &ClaimId, document_id: &DocumentId, chunk_id: &ChunkId, level: u8) -> Evidence {
+    fn evidence(
+        claim_id: &ClaimId,
+        document_id: &DocumentId,
+        chunk_id: &ChunkId,
+        level: u8,
+    ) -> Evidence {
         Evidence {
             id: EvidenceId::new(),
             claim_id: claim_id.clone(),
@@ -174,7 +181,10 @@ mod tests {
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].evidence_level, EvidenceLevel::QuoteContext);
         assert_eq!(stored[0].chunk_id.as_ref(), Some(&chunk_id));
-        assert_eq!(stored[0].quote.as_deref(), Some("Rust 1.75 stabilized async fn in trait."));
+        assert_eq!(
+            stored[0].quote.as_deref(),
+            Some("Rust 1.75 stabilized async fn in trait.")
+        );
         assert_eq!(stored[0].start_offset, Some(0));
         assert_eq!(stored[0].confidence, Some(0.8));
     }
@@ -195,10 +205,17 @@ mod tests {
     fn deleting_a_chunk_keeps_the_evidence_but_nulls_the_pointer() {
         let conn = memory_db();
         let (claim_id, _, chunk_id) = seed_claim(&conn);
-        insert(&conn, &evidence(&claim_id, &legacy_document_id(&conn), &chunk_id, 1)).unwrap();
+        insert(
+            &conn,
+            &evidence(&claim_id, &legacy_document_id(&conn), &chunk_id, 1),
+        )
+        .unwrap();
 
-        conn.execute("DELETE FROM chunks WHERE id = ?1", params![chunk_id.as_str()])
-            .unwrap();
+        conn.execute(
+            "DELETE FROM chunks WHERE id = ?1",
+            params![chunk_id.as_str()],
+        )
+        .unwrap();
 
         let stored = list_for_claim(&conn, &claim_id).unwrap();
         assert_eq!(stored.len(), 1, "证据本身不应随切片消失（TDD §85）");

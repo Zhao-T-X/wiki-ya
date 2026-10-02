@@ -18,10 +18,10 @@ use std::io::{BufRead, Write};
 
 use serde_json::{json, Value};
 
+use wiki_ya_lib::application::dto::SearchInput;
 use wiki_ya_lib::application::knowledge_service;
 use wiki_ya_lib::application::search_service;
 use wiki_ya_lib::application::settings_service;
-use wiki_ya_lib::application::dto::SearchInput;
 use wiki_ya_lib::domain::common::ids::{ClaimId, EntityId};
 use wiki_ya_lib::infrastructure::db;
 
@@ -62,13 +62,15 @@ fn main() {
             }),
             "ping" => json!({}),
             "tools/list" => json!({ "tools": tools_list() }),
-            "tools/call" => match tools_call(&db_path, request.get("params").unwrap_or(&Value::Null)) {
-                Ok(result) => result,
-                Err(err) => json!({
-                    "content": [{ "type": "text", "text": err.to_string() }],
-                    "isError": true,
-                }),
-            },
+            "tools/call" => {
+                match tools_call(&db_path, request.get("params").unwrap_or(&Value::Null)) {
+                    Ok(result) => result,
+                    Err(err) => json!({
+                        "content": [{ "type": "text", "text": err.to_string() }],
+                        "isError": true,
+                    }),
+                }
+            }
             other => json!({
                 "content": [{ "type": "text", "text": format!("未知方法 `{other}`") }],
                 "isError": true,
@@ -147,7 +149,10 @@ fn tools_call(db_path: &str, params: &Value) -> Result<Value, wiki_ya_lib::error
         .get("name")
         .and_then(|value| value.as_str())
         .unwrap_or("");
-    let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let args = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     let conn = db::open(std::path::Path::new(db_path))?;
 
@@ -209,7 +214,5 @@ fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, wiki_ya_lib::error
         .and_then(|value| value.as_str())
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            wiki_ya_lib::error::AppError::Internal(format!("工具参数 `{key}` 缺失"))
-        })
+        .ok_or_else(|| wiki_ya_lib::error::AppError::Internal(format!("工具参数 `{key}` 缺失")))
 }

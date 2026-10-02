@@ -7,8 +7,8 @@
 //!   （受控词表校验 + 实体消解）——迁移不绕过任何领域不变量。
 //! - **诚实呈现**：跳过与失败全部带原因进 `notes`，绝不静默丢弃数据。
 
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -136,7 +136,9 @@ pub fn import(target: &mut Connection, source_path: &Path) -> AppResult<Migratio
             }
             Err(err) => {
                 report.documents_skipped += 1;
-                report.notes.push(format!("文档「{source_id}」导入失败：{err}"));
+                report
+                    .notes
+                    .push(format!("文档「{source_id}」导入失败：{err}"));
             }
         }
     }

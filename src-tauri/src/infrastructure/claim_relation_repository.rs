@@ -146,9 +146,7 @@ pub fn get(conn: &Connection, id: &ClaimRelationId) -> AppResult<Option<ClaimRel
 
 /// 待审核队列。
 pub fn list_pending(conn: &Connection, limit: usize) -> AppResult<Vec<ClaimRelationRow>> {
-    let sql = format!(
-        "{RELATION_SELECT} WHERE cr.status = 'candidate' {REVIEW_ORDER} LIMIT ?1"
-    );
+    let sql = format!("{RELATION_SELECT} WHERE cr.status = 'candidate' {REVIEW_ORDER} LIMIT ?1");
     let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map(params![limit.clamp(1, 200) as i64], map_relation)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -260,8 +258,7 @@ pub fn apply_decision(
         ],
     )?;
 
-    get(conn, relation_id)?
-        .ok_or_else(|| AppError::Internal("关系刚更新却读不到".into()))
+    get(conn, relation_id)?.ok_or_else(|| AppError::Internal("关系刚更新却读不到".into()))
 }
 
 /// 一条演化事件（CORE-005）。只追加、不修改，用于审计与 Timeline。
@@ -338,10 +335,10 @@ pub fn count_pending(conn: &Connection) -> AppResult<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::evolution::decision::{EvolutionTransition, ReviewAction};
     use crate::domain::knowledge::claim::{
         Claim, ClaimObject, ClaimStatus, ClaimType, Modality, Polarity,
     };
-    use crate::domain::evolution::decision::{EvolutionTransition, ReviewAction};
     use crate::domain::ontology::predicate::ClaimPredicate;
     use crate::infrastructure::db::tests::memory_db;
     use crate::infrastructure::{claim_repository, entity_repository};
@@ -407,9 +404,7 @@ mod tests {
         conn.query_row(
             "SELECT status FROM claims WHERE id = ?1",
             params![id.as_str()],
-            |row| {
-                row.get::<_, String>(0)
-            },
+            |row| row.get::<_, String>(0),
         )
         .unwrap()
     }
@@ -501,12 +496,21 @@ mod tests {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
 
-        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes))
-            .unwrap();
+        decide(
+            &conn,
+            &id,
+            ReviewAction::Accept,
+            Some(ClaimRelationType::Supersedes),
+        )
+        .unwrap();
         assert_eq!(claim_status(&conn, &target), "superseded");
 
         decide(&conn, &id, ReviewAction::Reset, None).unwrap();
-        assert_eq!(claim_status(&conn, &target), "verified", "必须精确恢复（INV-09）");
+        assert_eq!(
+            claim_status(&conn, &target),
+            "verified",
+            "必须精确恢复（INV-09）"
+        );
     }
 
     #[test]
@@ -514,7 +518,13 @@ mod tests {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
 
-        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
+        decide(
+            &conn,
+            &id,
+            ReviewAction::Accept,
+            Some(ClaimRelationType::Supersedes),
+        )
+        .unwrap();
         assert_eq!(claim_status(&conn, &target), "superseded");
 
         // 改判为 supplements 且仍 accepted：必须回滚被取代的 Claim（INV-09）。
@@ -538,11 +548,21 @@ mod tests {
     fn repeating_accept_does_not_corrupt_the_rollback_anchor() {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
-        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes))
-            .unwrap();
+        decide(
+            &conn,
+            &id,
+            ReviewAction::Accept,
+            Some(ClaimRelationType::Supersedes),
+        )
+        .unwrap();
         // 再次确认：不能把 'superseded' 记成 previous_status
-        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes))
-            .unwrap();
+        decide(
+            &conn,
+            &id,
+            ReviewAction::Accept,
+            Some(ClaimRelationType::Supersedes),
+        )
+        .unwrap();
         let row = get(&conn, &id).unwrap().unwrap();
         assert_eq!(row.target_previous_status.as_deref(), Some("verified"));
 
@@ -699,7 +719,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(orphan, 0, "存在没有 accepted supersedes 支撑的 superseded claim");
+        assert_eq!(
+            orphan, 0,
+            "存在没有 accepted supersedes 支撑的 superseded claim"
+        );
 
         // 反向：accepted 的 supersedes 的 target 必须是 superseded。
         let dangling: i64 = conn
@@ -712,7 +735,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(dangling, 0, "accepted supersedes 的 target 却不是 superseded");
+        assert_eq!(
+            dangling, 0,
+            "accepted supersedes 的 target 却不是 superseded"
+        );
     }
 
     #[test]
@@ -720,7 +746,13 @@ mod tests {
         let conn = memory_db();
         let (_, target, id) = seed_relation(&conn);
 
-        decide(&conn, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
+        decide(
+            &conn,
+            &id,
+            ReviewAction::Accept,
+            Some(ClaimRelationType::Supersedes),
+        )
+        .unwrap();
         decide(&conn, &id, ReviewAction::Reset, None).unwrap();
 
         let events = list_events(&conn, &id).unwrap();
@@ -731,7 +763,10 @@ mod tests {
         assert_eq!(events[0].target_status_after.as_deref(), Some("superseded"));
 
         assert_eq!(events[1].status, ClaimRelationStatus::Candidate);
-        assert_eq!(events[1].target_status_before.as_deref(), Some("superseded"));
+        assert_eq!(
+            events[1].target_status_before.as_deref(),
+            Some("superseded")
+        );
         assert_eq!(events[1].target_status_after.as_deref(), Some("verified"));
 
         assert_eq!(claim_status(&conn, &target), "verified");
@@ -761,12 +796,22 @@ mod tests {
 
         {
             let tx = conn.transaction().unwrap();
-            decide(&tx, &id, ReviewAction::Accept, Some(ClaimRelationType::Supersedes)).unwrap();
+            decide(
+                &tx,
+                &id,
+                ReviewAction::Accept,
+                Some(ClaimRelationType::Supersedes),
+            )
+            .unwrap();
             assert_eq!(claim_status(&tx, &target), "superseded");
             tx.rollback().unwrap();
         }
 
-        assert_eq!(claim_status(&conn, &target), "verified", "回滚后不得残留状态变更");
+        assert_eq!(
+            claim_status(&conn, &target),
+            "verified",
+            "回滚后不得残留状态变更"
+        );
         assert!(
             list_events(&conn, &id).unwrap().is_empty(),
             "回滚后不得残留事件"

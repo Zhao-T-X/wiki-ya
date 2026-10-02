@@ -16,10 +16,8 @@ use crate::domain::evolution::conflict::{compare_all, ClaimView};
 use crate::domain::evolution::decision::{EvolutionTransition, ReviewAction};
 use crate::domain::knowledge::claim::ClaimStatus;
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::{
-    claim_relation_repository, claim_repository, document_repository,
-};
 use crate::infrastructure::claim_relation_repository::ClaimRelationRow;
+use crate::infrastructure::{claim_relation_repository, claim_repository, document_repository};
 
 /// 每一条 Claim 最多比较多少个候选。
 ///
@@ -87,7 +85,8 @@ pub fn analyze_document(
                 ClaimRelationType::Contradicts => summary.2 += 1,
                 _ => {}
             }
-            if verdict.suggested_action == crate::domain::evolution::conflict::SuggestedAction::Review
+            if verdict.suggested_action
+                == crate::domain::evolution::conflict::SuggestedAction::Review
             {
                 summary.3 += 1;
             }
@@ -152,7 +151,8 @@ pub fn decide_relation(
         .map(str::parse::<ClaimStatus>)
         .transpose()?;
 
-    let transition = EvolutionTransition::plan(relationship, action, target_status, rollback_anchor);
+    let transition =
+        EvolutionTransition::plan(relationship, action, target_status, rollback_anchor);
     let row = claim_relation_repository::apply_decision(
         &transaction,
         relation_id,
@@ -242,11 +242,8 @@ mod tests {
     /// 造出"同一主语同一谓语、宾语不同"的两份文档，制造一次冲突。
     fn seed_conflict(conn: &mut Connection) -> DocumentId {
         let first = seed_document(conn, "First", "OpenAI 的 CEO 是 Sam。");
-        knowledge_service::create_claim(
-            conn,
-            claim_input("OpenAI", "is", Some("Sam"), &first),
-        )
-        .unwrap();
+        knowledge_service::create_claim(conn, claim_input("OpenAI", "is", Some("Sam"), &first))
+            .unwrap();
 
         let second = seed_document(conn, "Second", "OpenAI 的 CEO 是 Alice。");
         second
@@ -297,7 +294,10 @@ mod tests {
         let first = analyze_document(&mut conn, &second).unwrap();
         assert_eq!(first.relations_written, 1);
         let again = analyze_document(&mut conn, &second).unwrap();
-        assert_eq!(again.relations_written, 0, "同一对 Claim 不应重复上报（INV-07）");
+        assert_eq!(
+            again.relations_written, 0,
+            "同一对 Claim 不应重复上报（INV-07）"
+        );
     }
 
     #[test]
@@ -321,7 +321,10 @@ mod tests {
         assert_eq!(report.duplicates, 1);
         assert_eq!(report.needs_review, 0, "重复不改变知识，无需打扰用户");
         assert_eq!(report.verdicts[0].status, "accepted");
-        assert_eq!(report.verdicts[0].suggested_action.as_deref(), Some("link_evidence"));
+        assert_eq!(
+            report.verdicts[0].suggested_action.as_deref(),
+            Some("link_evidence")
+        );
     }
 
     #[test]
@@ -399,11 +402,9 @@ mod tests {
     /// 造出 "OpenAI is Sam" / "OpenAI is Alice" 的冲突，并完成一次演化分析。
     fn seed_supersede_case(conn: &mut Connection) -> (String, String, ClaimRelationId) {
         let first = seed_document(conn, "First", "OpenAI 的 CEO 是 Sam。");
-        let old = knowledge_service::create_claim(
-            conn,
-            claim_input("OpenAI", "is", Some("Sam"), &first),
-        )
-        .unwrap();
+        let old =
+            knowledge_service::create_claim(conn, claim_input("OpenAI", "is", Some("Sam"), &first))
+                .unwrap();
 
         let second = seed_document(conn, "Second", "OpenAI 的 CEO 是 Alice。");
         let new = knowledge_service::create_claim(
@@ -431,12 +432,20 @@ mod tests {
             Some(ClaimRelationType::Supersedes),
         )
         .unwrap();
-        assert_eq!(lifecycle_of(&conn, &old_id), "superseded", "旧知识应成为历史");
+        assert_eq!(
+            lifecycle_of(&conn, &old_id),
+            "superseded",
+            "旧知识应成为历史"
+        );
         assert_eq!(lifecycle_of(&conn, &new_id), "current", "新知识应成为当前");
 
         // 回滚：精确恢复，当前知识回到旧知识。
         decide_relation(&mut conn, &relation_id, ReviewAction::Reset, None).unwrap();
-        assert_eq!(lifecycle_of(&conn, &old_id), "current", "回滚后必须恢复为当前");
+        assert_eq!(
+            lifecycle_of(&conn, &old_id),
+            "current",
+            "回滚后必须恢复为当前"
+        );
         assert_eq!(
             claim_relation_repository::list_events(&conn, &relation_id)
                 .unwrap()
@@ -577,11 +586,8 @@ mod tests {
         .unwrap();
 
         let second = seed_document(&mut conn, "Second", "一条宾语缺失的含糊陈述。");
-        knowledge_service::create_claim(
-            &mut conn,
-            claim_input("wiki-ya", "uses", None, &second),
-        )
-        .unwrap();
+        knowledge_service::create_claim(&mut conn, claim_input("wiki-ya", "uses", None, &second))
+            .unwrap();
 
         let report = analyze_document(&mut conn, &second).unwrap();
         assert_eq!(report.relations_written, 0, "unclear 不应污染审核队列");

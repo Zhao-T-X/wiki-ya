@@ -98,8 +98,12 @@ mod tests {
     #[test]
     fn relation_types_cover_both_prd_and_reference() {
         assert_eq!(ClaimRelationType::ALL.len(), 6);
-        assert!(ClaimRelationType::ALL.iter().any(|r| r.as_str() == "supplements"));
-        assert!(ClaimRelationType::ALL.iter().any(|r| r.as_str() == "unclear"));
+        assert!(ClaimRelationType::ALL
+            .iter()
+            .any(|r| r.as_str() == "supplements"));
+        assert!(ClaimRelationType::ALL
+            .iter()
+            .any(|r| r.as_str() == "unclear"));
     }
 
     #[test]

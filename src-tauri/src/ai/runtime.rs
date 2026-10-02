@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use crate::ai::agents::AgentRole;
 use crate::ai::config::AiConfig;
 use crate::ai::provider::{default_provider, CompletionRequest};
-use crate::ai::tools::{self, ToolOutput, ToolName};
+use crate::ai::tools::{self, ToolName, ToolOutput};
 use crate::error::{AppError, AppResult};
 use crate::events::{RunEvent, RunSink};
 use crate::infrastructure::telemetry_repository;
@@ -214,10 +214,16 @@ enum Action {
 /// 解析模型的 JSON 动作（宽松：容忍 markdown 围栏与前后解释文字）。
 fn parse_action(text: &str) -> AppResult<Action> {
     let start = text.find('{').ok_or_else(|| {
-        AppError::Internal(format!("模型输出中没有 JSON 动作：{}", clip_text(text, 120)))
+        AppError::Internal(format!(
+            "模型输出中没有 JSON 动作：{}",
+            clip_text(text, 120)
+        ))
     })?;
     let end = text.rfind('}').ok_or_else(|| {
-        AppError::Internal(format!("模型输出中的 JSON 不完整：{}", clip_text(text, 120)))
+        AppError::Internal(format!(
+            "模型输出中的 JSON 不完整：{}",
+            clip_text(text, 120)
+        ))
     })?;
     if end < start {
         return Err(AppError::Internal("模型输出的 JSON 格式无效".into()));
@@ -269,7 +275,10 @@ fn tools_manual() -> String {
         ("get_claim", r#"{"id": "<claim id>"}"#),
         ("get_evidence", r#"{"claim_id": "<claim id>"}"#),
         ("find_related", r#"{"entity_id": "<entity id>"}"#),
-        ("compare_claims", r#"{"claim_a": "<id>", "claim_b": "<id>"}"#),
+        (
+            "compare_claims",
+            r#"{"claim_a": "<id>", "claim_b": "<id>"}"#,
+        ),
         ("detect_conflict", r#"{"entity_id": "<id>"}"#),
         ("propose_evolution", r#"{"claim_id": "<id>"}"#),
         (

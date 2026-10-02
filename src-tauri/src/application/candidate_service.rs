@@ -11,9 +11,7 @@
 
 use rusqlite::Connection;
 
-use crate::application::dto::{
-    CandidateDto, ClaimCard, CreateClaimInput, DecideCandidateInput,
-};
+use crate::application::dto::{CandidateDto, ClaimCard, CreateClaimInput, DecideCandidateInput};
 use crate::application::evolution_service;
 use crate::application::knowledge_service;
 use crate::domain::common::ids::DocumentId;
@@ -30,10 +28,7 @@ pub fn list_by_run(conn: &Connection, run_id: &str) -> AppResult<Vec<CandidateDt
 }
 
 /// 用户决策一条候选。
-pub fn decide(
-    conn: &mut Connection,
-    input: DecideCandidateInput,
-) -> AppResult<CandidateDto> {
+pub fn decide(conn: &mut Connection, input: DecideCandidateInput) -> AppResult<CandidateDto> {
     let candidate = candidate_repository::get(conn, &input.candidate_id)?
         .ok_or_else(|| AppError::NotFound(format!("候选 {} 不存在", input.candidate_id)))?;
 

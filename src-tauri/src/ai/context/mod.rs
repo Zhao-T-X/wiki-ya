@@ -230,7 +230,11 @@ pub fn compile(mut items: Vec<ContextItem>, budget: &Budget) -> ContextPack {
     items.retain(|item| seen.insert(item.id.clone()));
 
     // 4) 按优先级降序；同优先级保持原顺序。
-    items.sort_by(|a, b| b.priority.partial_cmp(&a.priority).unwrap_or(std::cmp::Ordering::Equal));
+    items.sort_by(|a, b| {
+        b.priority
+            .partial_cmp(&a.priority)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 5) 贪心装入直到超出预算（至少保留一条，避免有内容却空包）。
     let mut selected = Vec::new();
@@ -328,8 +332,16 @@ mod tests {
             .collect();
         let pack = compile(items, &Budget { max_tokens: 1000 });
         assert!(pack.truncated, "应因超预算被截断");
-        assert!(pack.items.len() < 6, "应有条目被丢弃, got {}", pack.items.len());
-        assert!(pack.total_tokens <= 1000, "不应超预算, got {}", pack.total_tokens);
+        assert!(
+            pack.items.len() < 6,
+            "应有条目被丢弃, got {}",
+            pack.items.len()
+        );
+        assert!(
+            pack.total_tokens <= 1000,
+            "不应超预算, got {}",
+            pack.total_tokens
+        );
         assert!(pack.stats.truncated);
         assert_eq!(pack.stats.item_count, pack.items.len());
     }
@@ -340,7 +352,11 @@ mod tests {
         let pack = compile(items, &Budget { max_tokens: 100 });
         // 即便单条原始超预算，也至少保留一条；且经压缩后（cap=25）落入预算，不硬塞超预算内容。
         assert_eq!(pack.items.len(), 1);
-        assert!(pack.total_tokens <= 100, "压缩后仍超预算: {}", pack.total_tokens);
+        assert!(
+            pack.total_tokens <= 100,
+            "压缩后仍超预算: {}",
+            pack.total_tokens
+        );
     }
 
     #[test]

@@ -244,7 +244,10 @@ impl Provider for OpenAiProvider {
             .ok_or_else(|| AppError::Internal("AI 未配置 API Key".into()))?;
 
         let client = reqwest::blocking::Client::new();
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
         let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
         if stream_only_endpoints()
             .lock()
@@ -267,7 +270,11 @@ impl Provider for OpenAiProvider {
         // 正常情况下第 1 次就成功，后续组合只在失败路径上消耗，不影响常规成本。
         const HIGH_BUDGET: u32 = 32_768;
         let mut attempts: Vec<(bool, u32, bool)> = Vec::new();
-        let json_flags: &[bool] = if request.json_mode { &[true, false] } else { &[false] };
+        let json_flags: &[bool] = if request.json_mode {
+            &[true, false]
+        } else {
+            &[false]
+        };
         for &use_json in json_flags {
             attempts.push((use_json, request.max_tokens, false));
             attempts.push((use_json, HIGH_BUDGET, false));
@@ -352,10 +359,7 @@ impl Provider for OpenAiProvider {
             if !status.is_success() {
                 let text = response.text().unwrap_or_default();
                 let code = status.as_u16();
-                crate::log_warn!(
-                    "AI 接口返回 {status}：{}",
-                    crate::logging::clip(&text, 400)
-                );
+                crate::log_warn!("AI 接口返回 {status}：{}", crate::logging::clip(&text, 400));
                 // 认证类错误重试无意义，直接失败；其余（例如端点不支持更大的
                 // max_tokens 或不认识 enable_thinking 而报 400）应继续尝试下一组合。
                 if code == 401 || code == 403 {
@@ -410,10 +414,7 @@ impl Provider for OpenAiProvider {
             };
 
             let choice_count = parsed.choices.len();
-            let finish_reason = parsed
-                .choices
-                .first()
-                .and_then(|c| c.finish_reason.clone());
+            let finish_reason = parsed.choices.first().and_then(|c| c.finish_reason.clone());
             let (content, reasoning) = parsed
                 .choices
                 .into_iter()
@@ -531,7 +532,9 @@ impl Provider for OpenAiProvider {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().unwrap_or_default();
-            return Err(AppError::Internal(format!("向量化接口返回 {status}：{text}")));
+            return Err(AppError::Internal(format!(
+                "向量化接口返回 {status}：{text}"
+            )));
         }
 
         let parsed: EmbeddingResponse = response
@@ -578,7 +581,10 @@ impl Provider for OpenAiProvider {
         };
 
         let client = reqwest::blocking::Client::new();
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
         let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
         if stream_only_endpoints()
             .lock()
@@ -620,7 +626,10 @@ impl Provider for OpenAiProvider {
         );
         if !status.is_success() {
             let text = response.text().unwrap_or_default();
-            crate::log_error!("AI 流式接口返回 {status}：{}", crate::logging::clip(&text, 800));
+            crate::log_error!(
+                "AI 流式接口返回 {status}：{}",
+                crate::logging::clip(&text, 800)
+            );
             return Err(AppError::Internal(format!("AI 接口返回 {status}：{text}")));
         }
 

@@ -15,9 +15,9 @@
 //!    "当前知识"去遮蔽历史，否则知识会在时间维度上凭空消失。
 
 use crate::domain::common::ids::{ClaimId, EntityId};
-use crate::domain::ontology::predicate::ClaimPredicate;
 use crate::domain::evolution::conflict::ClaimView;
 use crate::domain::knowledge::claim::ClaimStatus;
+use crate::domain::ontology::predicate::ClaimPredicate;
 
 /// 一条 Claim 在「当下」的定位。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,11 +57,7 @@ impl ResolvedClaim {
 /// `None` 表示该侧无界。**无界一律视为有效**（决策 D2）：
 /// 抽取时间的失败率很高，若把"没有时间"当作"已过期"，
 /// 系统会静默丢掉大量知识。宁可保守地认为它仍然成立。
-pub fn is_temporally_valid(
-    valid_from: Option<&str>,
-    valid_until: Option<&str>,
-    now: &str,
-) -> bool {
+pub fn is_temporally_valid(valid_from: Option<&str>, valid_until: Option<&str>, now: &str) -> bool {
     if let Some(from) = valid_from {
         if !from.is_empty() && from > now {
             return false;
@@ -235,7 +231,11 @@ mod tests {
             claim("a", ClaimStatus::Archived, ClaimPredicate::Uses),
             claim("d", ClaimStatus::Draft, ClaimPredicate::Uses),
         ];
-        let validities = vec![Validity::default(), Validity::default(), Validity::default()];
+        let validities = vec![
+            Validity::default(),
+            Validity::default(),
+            Validity::default(),
+        ];
         assert!(resolve_current(&claims, &validities, NOW).is_empty());
     }
 
