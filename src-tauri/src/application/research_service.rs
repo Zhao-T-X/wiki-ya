@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::ai::agents::AgentRole;
 use crate::ai::provider::default_provider;
-use crate::ai::runtime;
+use crate::ai::rig_adapter::RigAdapter;
 use crate::application::dto::{AgentStepDto, ResearchReport, ResearchTaskCard, StartResearchInput};
 use crate::domain::review::review::ReviewTarget;
 use crate::error::{AppError, AppResult};
@@ -67,7 +67,10 @@ pub fn start_research(
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    match runtime::run(conn, AgentRole::Research, &question, &run_id, run_sink) {
+    // M14 PR3：Agent Run 底座切换到 Rig（Adapter 层，行为经 Golden 对比）。
+    // Legacy runtime 保留为 Golden 基线（ai/runtime.rs）。
+    let adapter = RigAdapter::new(crate::ai::config::AiConfig::from_settings(conn));
+    match adapter.run_react_blocking(conn, AgentRole::Research, &question, &run_id, run_sink) {
         Ok(run) => {
             let steps_value = serde_json::to_value(&run.steps).unwrap_or_else(|_| json!([]));
             let findings = json!({

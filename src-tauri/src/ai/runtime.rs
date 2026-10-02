@@ -51,6 +51,10 @@ pub struct AgentRun {
 ///
 /// `sink` 用于把过程事件（开始 / 思考 / token 增量 / 工具调用 / 完成）实时
 /// 推给前端（TDD §53）；`None` 时静默运行，行为不变。
+/// Legacy 自研 ReAct 循环（M14 PR3 起生产调用方已切换到
+/// `rig_adapter::RigAdapter`）。**保留为 Golden 对比基线**：
+/// 行为回归时用它并列验证，不要删除。
+#[allow(dead_code)]
 pub fn run(
     conn: &Connection,
     role: AgentRole,
