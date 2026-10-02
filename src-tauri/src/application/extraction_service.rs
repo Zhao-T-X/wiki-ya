@@ -23,12 +23,14 @@ use crate::application::ai_service;
 use crate::application::dto::{ExtractionReport, ExtractionRunDto, ExtractedClaim};
 use crate::domain::common::ids::DocumentId;
 use crate::domain::extraction::{ExtractionRun, ExtractionRunStatus, ExtractionStage};
+use crate::domain::knowledge::candidate::{Candidate, CandidateStatus};
 use crate::domain::knowledge::claim::ClaimObject;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
 use crate::events::{RunEvent, RunSink};
 use crate::infrastructure::{
-    claim_repository, db, document_repository, extraction_run_repository, run_repository,
+    candidate_repository, claim_repository, db, document_repository, extraction_run_repository,
+    run_repository,
 };
 
 /// 创建一条 Run（初始 `queued` / `preparing`），立即返回 id。
@@ -280,8 +282,31 @@ fn run_pipeline(
         count: all.len(),
     });
 
-    // ---- Validating ----
+    // ---- Validating（M6：候选一产生就持久化——没确认 ≠ 不存在）----
     extraction_run_repository::set_stage(&conn, run_id, ExtractionStage::Validating)?;
+    for claim in &all {
+        let candidate = Candidate {
+            id: uuid::Uuid::new_v4().to_string(),
+            run_id: run_id.to_string(),
+            document_id: document_id.clone(),
+            subject: claim.subject.clone(),
+            predicate: claim.predicate.clone(),
+            object_text: claim.object_text.clone(),
+            content: claim.content.clone(),
+            claim_type: claim.claim_type.clone(),
+            polarity: claim.polarity.clone(),
+            modality: claim.modality.clone(),
+            confidence: claim.confidence,
+            source_chunk_index: claim.source_chunk_index.map(|v| v as i64),
+            source_quote: claim.source_quote.clone(),
+            sentence: claim.sentence.clone(),
+            status: CandidateStatus::Pending,
+            accepted_claim_id: None,
+            reject_reason: claim.reject_reason.clone(),
+            created_at: String::new(),
+        };
+        candidate_repository::insert(&conn, &candidate)?;
+    }
     run_repository::set_stage(&conn, run_id, ExtractionStage::Validating.as_str())?;
     run_sink(&RunEvent::StageChanged {
         run_id: run_id.to_string(),

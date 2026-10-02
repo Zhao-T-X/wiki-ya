@@ -8,6 +8,7 @@
 pub mod agent_profile;
 pub mod ai;
 pub mod ask;
+pub mod candidate;
 pub mod documents;
 pub mod extraction;
 pub mod knowledge;

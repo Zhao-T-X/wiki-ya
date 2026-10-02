@@ -143,6 +143,9 @@ pub fn run() {
             // ---- skill runtime（M2）----
             commands::skill::list_skills,
             commands::skill::run_skill,
+            // ---- candidates（M6）----
+            commands::candidate::list_candidates,
+            commands::candidate::decide_candidate,
             // ---- agent profile（M4）----
             commands::agent_profile::list_agent_profiles,
             commands::agent_profile::run_agent_profile,

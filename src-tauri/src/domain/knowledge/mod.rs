@@ -6,6 +6,7 @@
 //! - [`idea`]     尚未成为事实的思考
 //! - [`question`] 未解决的问题
 
+pub mod candidate;
 pub mod chunk;
 pub mod claim;
 pub mod document;

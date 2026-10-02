@@ -10,6 +10,7 @@
 pub mod agent_profile_service;
 pub mod ai_service;
 pub mod ask_service;
+pub mod candidate_service;
 pub mod capture_service;
 pub mod dto;
 pub mod evolution_service;

@@ -28,6 +28,7 @@ import type {
   ExtractClaimsInput,
   ExtractionReport,
   ExtractionRunDto,
+  CandidateDto,
   RunTraceDto,
   AgentProfile,
   SkillDescriptorDto,
@@ -322,4 +323,18 @@ export function run_agent_profile(input: {
   input?: unknown;
 }): Promise<string> {
   return call<string>('run_agent_profile', input);
+}
+
+/** 按 Run 列出候选（M6）。 */
+export function list_candidates(input: { id: string }): Promise<CandidateDto[]> {
+  return call<CandidateDto[]>('list_candidates', input);
+}
+
+/** 决策一条候选：accept → 落库为 Claim + 演化分析；reject → 留痕。 */
+export function decide_candidate(input: {
+  candidateId: string;
+  accept: boolean;
+  reason?: string;
+}): Promise<CandidateDto> {
+  return call<CandidateDto>('decide_candidate', input);
 }

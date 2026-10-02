@@ -3,6 +3,7 @@
 //! 约束：Repository 只实现 Domain 定义的 trait，**Domain 不知道 SQLite**。
 //! 业务层不允许拼 SQL（TDD §12）。
 
+pub mod candidate_repository;
 pub mod claim_relation_repository;
 pub mod claim_repository;
 pub mod db;

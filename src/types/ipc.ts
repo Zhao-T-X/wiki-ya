@@ -645,3 +645,25 @@ export interface AgentProfile {
   policy: string[];
   systemPrompt: string;
 }
+
+/** 候选知识（M6）：一产生就持久化，决策留痕。 */
+export interface CandidateDto {
+  id: string;
+  runId: string;
+  documentId: string;
+  subject: string;
+  predicate: string;
+  objectText?: string;
+  content?: string;
+  claimType?: string;
+  polarity?: string;
+  modality?: string;
+  confidence?: number;
+  sourceChunkIndex?: number;
+  sourceQuote?: string;
+  sentence?: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  acceptedClaimId?: string;
+  rejectReason?: string;
+  createdAt: string;
+}

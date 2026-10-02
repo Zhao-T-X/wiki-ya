@@ -794,3 +794,41 @@ pub struct RunAgentProfileInput {
     #[serde(default)]
     pub input: serde_json::Value,
 }
+
+// ---------------------------------------------------------------------------
+// 候选知识（M6）
+// ---------------------------------------------------------------------------
+
+/// 一条候选知识（Review / Trace 用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateDto {
+    pub id: String,
+    pub run_id: String,
+    pub document_id: String,
+    pub subject: String,
+    pub predicate: String,
+    pub object_text: Option<String>,
+    pub content: Option<String>,
+    pub claim_type: Option<String>,
+    pub polarity: Option<String>,
+    pub modality: Option<String>,
+    pub confidence: Option<f32>,
+    pub source_chunk_index: Option<i64>,
+    pub source_quote: Option<String>,
+    pub sentence: Option<String>,
+    pub status: String,
+    pub accepted_claim_id: Option<String>,
+    pub reject_reason: Option<String>,
+    pub created_at: String,
+}
+
+/// 用户决策一条候选（accept → 落库为 Claim + 演化分析；reject → 留痕）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecideCandidateInput {
+    pub candidate_id: String,
+    pub accept: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
