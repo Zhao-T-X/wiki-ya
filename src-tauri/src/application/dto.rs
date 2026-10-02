@@ -756,3 +756,29 @@ pub struct RunTraceDto {
     /// `run_type = extraction` 时的抽取明细快照。
     pub extraction_run: Option<ExtractionRunDto>,
 }
+
+// ---------------------------------------------------------------------------
+// Skill Runtime（M2）
+// ---------------------------------------------------------------------------
+
+/// 内置 Skill 的静态描述。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDescriptorDto {
+    pub name: String,
+    pub description: String,
+    pub permissions: Vec<String>,
+    pub input_hint: String,
+}
+
+/// 启动一次 Skill Run 的输入。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunSkillInput {
+    pub name: String,
+    /// Skill 的自由结构输入（各 Skill 自行约定字段，见 input_hint）。
+    #[serde(default)]
+    pub input: serde_json::Value,
+    /// 可选：挂到哪个父 Run 下（Agent Run → Skill Run 树）。
+    pub parent_run_id: Option<String>,
+}

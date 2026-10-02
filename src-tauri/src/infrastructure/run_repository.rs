@@ -47,6 +47,15 @@ pub fn set_stage(conn: &Connection, id: &str, stage: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// 覆盖写 metadata（如 Skill 执行结果摘要）。
+pub fn set_metadata(conn: &Connection, id: &str, metadata: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE runs SET metadata = ?2 WHERE id = ?1",
+        rusqlite::params![id, metadata],
+    )?;
+    Ok(())
+}
+
 /// 终态收口：status + finished_at + 错误信息一次写齐。
 pub fn finish(
     conn: &Connection,

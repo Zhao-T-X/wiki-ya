@@ -50,6 +50,10 @@ getrandom = "0.2"
 # 保留：后续 custom-protocol 打包模式可能用到
 custom-protocol = ["tauri/custom-protocol"]
 
+[dev-dependencies]
+# 测试里需要真实文件库（被测函数自开连接）时的临时目录。
+tempfile = "3"
+
 [profile.dev]
 # 依赖只编译一次，用 -O 换取更快的运行期；自身代码保持 opt-level 0 便于调试。
 opt-level = 0

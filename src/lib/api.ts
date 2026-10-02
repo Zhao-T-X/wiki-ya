@@ -29,6 +29,7 @@ import type {
   ExtractionReport,
   ExtractionRunDto,
   RunTraceDto,
+  SkillDescriptorDto,
   AskRequest,
   AskResponse,
   AiSettings,
@@ -293,4 +294,18 @@ export function cancel_extraction(input: { id: string }): Promise<boolean> {
 
 export function ask(input: AskRequest): Promise<AskResponse> {
   return call<AskResponse>('ask', input);
+}
+
+/** 枚举内置 Skill（M2）。 */
+export function list_skills(): Promise<SkillDescriptorDto[]> {
+  return call<SkillDescriptorDto[]>('list_skills', {});
+}
+
+/** 启动一次 Skill Run：立即返回 runId，过程经 run-events 推送。 */
+export function run_skill(input: {
+  name: string;
+  input?: unknown;
+  parentRunId?: string;
+}): Promise<string> {
+  return call<string>('run_skill', input);
 }

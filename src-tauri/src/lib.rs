@@ -131,6 +131,9 @@ pub fn run() {
             commands::extraction::cancel_extraction,
             // ---- run trace（M1）----
             commands::trace::get_run_trace,
+            // ---- skill runtime（M2）----
+            commands::skill::list_skills,
+            commands::skill::run_skill,
             // ---- ask（Phase 6 问答）----
             commands::ask::ask,
             // ---- research（Phase 6 多步研究）----

@@ -15,6 +15,7 @@ pub mod research;
 pub mod review;
 pub mod search;
 pub mod settings;
+pub mod skill;
 pub mod timeline;
 pub mod trace;
 

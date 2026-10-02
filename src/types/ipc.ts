@@ -464,6 +464,14 @@ export interface AgentEventDto {
   createdAt: string;
 }
 
+/** 内置 Skill 描述（M2）。 */
+export interface SkillDescriptorDto {
+  name: string;
+  description: string;
+  permissions: string[];
+  inputHint: string;
+}
+
 /** 一次 Run 的完整可追溯视图（M1）。 */
 export interface RunTraceDto {
   id: string;
