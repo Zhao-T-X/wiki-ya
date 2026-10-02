@@ -667,3 +667,41 @@ export interface CandidateDto {
   rejectReason?: string;
   createdAt: string;
 }
+
+/** Claim 溯源：证据节点（M8）。 */
+export interface EvidenceNodeDto {
+  evidenceId: string;
+  documentId: string;
+  documentTitle: string;
+  chunkId?: string;
+  chunkIndex?: number;
+  quote?: string;
+}
+
+/** Claim 溯源：演化关系节点。 */
+export interface EvolutionNodeDto {
+  relationId: string;
+  relationship: string;
+  status: string;
+  sourceClaimId: string;
+  targetClaimId: string;
+  reason?: string;
+  createdAt: string;
+}
+
+/** Claim 溯源：候选节点。 */
+export interface CandidateNodeDto {
+  candidateId: string;
+  runId: string;
+  status: string;
+  createdAt: string;
+}
+
+/** 一条 Claim 的完整溯源视图（M8）。 */
+export interface ClaimTraceDto {
+  claimId: string;
+  evidences: EvidenceNodeDto[];
+  candidate?: CandidateNodeDto;
+  run?: RunTraceDto;
+  evolutions: EvolutionNodeDto[];
+}

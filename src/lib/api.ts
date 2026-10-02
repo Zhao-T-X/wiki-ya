@@ -29,6 +29,7 @@ import type {
   ExtractionReport,
   ExtractionRunDto,
   CandidateDto,
+  ClaimTraceDto,
   RunTraceDto,
   AgentProfile,
   SkillDescriptorDto,
@@ -337,4 +338,9 @@ export function decide_candidate(input: {
   reason?: string;
 }): Promise<CandidateDto> {
   return call<CandidateDto>('decide_candidate', input);
+}
+
+/** 读取一条 Claim 的完整溯源（M8）。 */
+export function get_claim_trace(input: { id: string }): Promise<ClaimTraceDto> {
+  return call<ClaimTraceDto>('get_claim_trace', input);
 }

@@ -832,3 +832,55 @@ pub struct DecideCandidateInput {
     #[serde(default)]
     pub reason: Option<String>,
 }
+
+// ---------------------------------------------------------------------------
+// Claim Trace（M8：Current → Claim → Evolution → Candidate → Run → Source）
+// ---------------------------------------------------------------------------
+
+/// 证据节点：Claim 与原文之间的桥。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceNodeDto {
+    pub evidence_id: String,
+    pub document_id: String,
+    pub document_title: String,
+    pub chunk_id: Option<String>,
+    pub chunk_index: Option<i64>,
+    pub quote: Option<String>,
+}
+
+/// 演化节点：该 Claim 参与的关系（supersedes / contradicts / …）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvolutionNodeDto {
+    pub relation_id: String,
+    pub relationship: String,
+    pub status: String,
+    pub source_claim_id: String,
+    pub target_claim_id: String,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
+/// 候选节点：产生该 Claim 的候选（若有）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateNodeDto {
+    pub candidate_id: String,
+    pub run_id: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+/// 一条 Claim 的完整溯源视图。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimTraceDto {
+    pub claim_id: String,
+    pub evidences: Vec<EvidenceNodeDto>,
+    pub candidate: Option<CandidateNodeDto>,
+    /// 产生候选的 Run（含 skill@version actor）。
+    pub run: Option<RunTraceDto>,
+    /// 该 Claim 参与的演化关系（新→旧）。
+    pub evolutions: Vec<EvolutionNodeDto>,
+}

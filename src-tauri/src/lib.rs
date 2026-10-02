@@ -140,6 +140,7 @@ pub fn run() {
             commands::extraction::cancel_extraction,
             // ---- run trace（M1）----
             commands::trace::get_run_trace,
+            commands::trace::get_claim_trace,
             // ---- skill runtime（M2）----
             commands::skill::list_skills,
             commands::skill::run_skill,

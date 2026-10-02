@@ -7,9 +7,12 @@
 //!
 //! 这是 M8 Trace UI 的数据源；先以命令形式暴露，前端随时可画时间线。
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
-use crate::application::dto::{AgentEventDto, RunTraceDto};
+use crate::application::dto::{
+    AgentEventDto, CandidateNodeDto, ClaimTraceDto, EvolutionNodeDto, EvidenceNodeDto,
+    RunTraceDto,
+};
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
 use crate::application::extraction_service;
@@ -69,5 +72,91 @@ fn agent_steps(conn: &Connection, run_id: &str) -> AppResult<Vec<AgentEventDto>>
             created_at: r.get(6)?,
         })
     })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+// ---------------------------------------------------------------------------
+// Claim Trace（M8）：Current Knowledge 反向追溯到 Source
+// ---------------------------------------------------------------------------
+
+/// 读取一条 Claim 的完整溯源：证据（原文/切片）、产生它的候选与 Run
+/// （含 skill@version）、参与的演化关系。四条链一次查询聚合。
+pub fn get_claim_trace(conn: &Connection, claim_id: &str) -> AppResult<ClaimTraceDto> {
+    // 1) 证据链：evidence → documents / chunks。
+    let mut stmt = conn.prepare(
+        "SELECT e.id, e.document_id, COALESCE(d.title, ''), e.chunk_id, \
+         c.chunk_index, e.quote FROM evidence e \
+         LEFT JOIN documents d ON d.id = e.document_id \
+         LEFT JOIN chunks c ON c.id = e.chunk_id \
+         WHERE e.claim_id = ?1 ORDER BY e.created_at",
+    )?;
+    let evidences = rows_to(&mut stmt, rusqlite::params![claim_id], |r| {
+        Ok(EvidenceNodeDto {
+            evidence_id: r.get(0)?,
+            document_id: r.get(1)?,
+            document_title: r.get(2)?,
+            chunk_id: r.get(3)?,
+            chunk_index: r.get(4)?,
+            quote: r.get(5)?,
+        })
+    })?;
+
+    // 2) 候选链：哪次抽取产生的这条知识。
+    let candidate: Option<CandidateNodeDto> = conn
+        .query_row(
+            "SELECT id, run_id, status, created_at FROM candidates \
+             WHERE accepted_claim_id = ?1 ORDER BY created_at DESC LIMIT 1",
+            rusqlite::params![claim_id],
+            |r| {
+                Ok(CandidateNodeDto {
+                    candidate_id: r.get(0)?,
+                    run_id: r.get(1)?,
+                    status: r.get(2)?,
+                    created_at: r.get(3)?,
+                })
+            },
+        )
+        .optional()?;
+
+    // 3) Run 链：候选的产生过程（阶段/步骤/actor = skill@version）。
+    let run = match &candidate {
+        Some(node) => Some(get_trace(conn, &node.run_id)?),
+        None => None,
+    };
+
+    // 4) 演化链：该 Claim 参与的关系（新→旧）。
+    let mut stmt = conn.prepare(
+        "SELECT id, relationship, status, source_claim_id, target_claim_id, reason, created_at \
+         FROM claim_relations WHERE source_claim_id = ?1 OR target_claim_id = ?1 \
+         ORDER BY created_at DESC",
+    )?;
+    let evolutions = rows_to(&mut stmt, rusqlite::params![claim_id], |r| {
+        Ok(EvolutionNodeDto {
+            relation_id: r.get(0)?,
+            relationship: r.get(1)?,
+            status: r.get(2)?,
+            source_claim_id: r.get(3)?,
+            target_claim_id: r.get(4)?,
+            reason: r.get(5)?,
+            created_at: r.get(6)?,
+        })
+    })?;
+
+    Ok(ClaimTraceDto {
+        claim_id: claim_id.to_string(),
+        evidences,
+        candidate,
+        run,
+        evolutions,
+    })
+}
+
+/// query_map → Vec 的小帮手（ rusqlite 错误自动转换）。
+fn rows_to<T>(
+    stmt: &mut rusqlite::Statement<'_>,
+    params: impl rusqlite::Params,
+    map: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> AppResult<Vec<T>> {
+    let rows = stmt.query_map(params, map)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }

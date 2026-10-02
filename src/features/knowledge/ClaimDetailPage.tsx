@@ -7,6 +7,7 @@ import { ErrorNotice } from '@/components/ErrorNotice';
 import { PageHeader } from '@/components/PageHeader';
 import { ArrowRightIcon } from '@/components/icons';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
+import { ClaimTraceCard } from '@/features/knowledge/ClaimTraceCard';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
@@ -219,6 +220,14 @@ export function ClaimDetailPage() {
                 ))}
               </ul>
             ) : null}
+          </section>
+
+          {/* Trace（M8）：Current → Claim → Evolution → Candidate → Run → Source */}
+          <section>
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              溯源
+            </h3>
+            {claim ? <ClaimTraceCard claimId={claim.id} /> : null}
           </section>
 
           {/* Related */}

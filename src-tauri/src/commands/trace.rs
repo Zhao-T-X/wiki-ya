@@ -4,7 +4,7 @@
 
 use tauri::State;
 
-use crate::application::dto::{IdInput, RunTraceDto};
+use crate::application::dto::{ClaimTraceDto, IdInput, RunTraceDto};
 use crate::application::trace_service;
 use crate::error::AppError;
 use crate::AppState;
@@ -17,4 +17,14 @@ pub fn get_run_trace(
 ) -> Result<RunTraceDto, AppError> {
     let conn = state.open()?;
     trace_service::get_trace(&conn, &input.id)
+}
+
+/// 读取一条 Claim 的完整溯源（M8：证据 / 候选 / Run / 演化）。
+#[tauri::command]
+pub fn get_claim_trace(
+    state: State<'_, AppState>,
+    input: IdInput,
+) -> Result<ClaimTraceDto, AppError> {
+    let conn = state.open()?;
+    trace_service::get_claim_trace(&conn, &input.id)
 }
