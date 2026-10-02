@@ -338,7 +338,7 @@ fn execute_inner(
 
     // 自定义 Skill（M11）：通用 Prompt 执行——**强制只读**，产物只是回答，
     // 不产生候选/提案，Ontology 与 Knowledge Policy 不可能被绕过。
-    generic_prompt_execute(conn, name, run_id, &input)
+    generic_prompt_execute(conn, name, run_id, &input, sink)
 }
 
 /// 自定义 Skill 的通用执行：instructions 作系统提示，输入文本作用户消息。
@@ -347,6 +347,7 @@ fn generic_prompt_execute(
     name: &str,
     run_id: &str,
     input: &Value,
+    sink: &RunSink,
 ) -> AppResult<Value> {
     let definition = resolve(conn, name)?;
     let config = crate::ai::config::AiConfig::from_settings(conn);
@@ -378,12 +379,70 @@ fn generic_prompt_execute(
     };
 
     // M14 PR4：自定义 Skill 的模型调用走 RigAdapter（含流式专用端点兜底）。
-    let adapter = RigAdapter::new(config);
+    let adapter = RigAdapter::new(config.clone());
     let result = adapter.run_blocking(crate::ai::rig_adapter::AgentRequest {
-        goal: text,
-        system: definition.instructions,
+        goal: text.clone(),
+        system: definition.instructions.clone(),
         run_id: run_id.to_string(),
     })?;
+
+    // M14 PR8：PROPOSE 型自定义 Skill——产出候选必须通过与 AI 抽取
+    // **完全相同**的抢救解析 + 受控词表校验，才能进 candidates 表（Review）。
+    // Ontology 不可能被绕过：词表校验是唯一的落库闸门。
+    if definition.has_permission(crate::domain::skill::SkillPermission::Propose) {
+        let document_id = input
+            .get("documentId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AppError::Domain("PROPOSE 型自定义 Skill 输入需要 `documentId`".into())
+            })?;
+        let system = format!(
+            "{}\n\n只输出一个 JSON 对象，形如 {{\"claims\":[ ... ]}}，不要任何解释或 Markdown。",
+            definition.instructions
+        );
+        let adapter2 = RigAdapter::new(config.clone());
+        let raw_answer = adapter2.run_blocking(crate::ai::rig_adapter::AgentRequest {
+            goal: text,
+            system,
+            run_id: run_id.to_string(),
+        })?;
+        let claims = crate::application::ai_service::parse_and_validate_claims(&raw_answer.answer)?;
+        let mut accepted = 0usize;
+        for claim in &claims {
+            let candidate = crate::domain::knowledge::candidate::Candidate {
+                id: uuid::Uuid::new_v4().to_string(),
+                run_id: run_id.to_string(),
+                document_id: document_id.to_string(),
+                subject: claim.subject.clone(),
+                predicate: claim.predicate.clone(),
+                object_text: claim.object_text.clone(),
+                content: claim.content.clone(),
+                claim_type: claim.claim_type.clone(),
+                polarity: claim.polarity.clone(),
+                modality: claim.modality.clone(),
+                confidence: claim.confidence,
+                source_chunk_index: None,
+                source_quote: claim.source_quote.clone(),
+                sentence: claim.sentence.clone(),
+                status: crate::domain::knowledge::candidate::CandidateStatus::Pending,
+                accepted_claim_id: None,
+                reject_reason: claim.reject_reason.clone(),
+                created_at: String::new(),
+            };
+            crate::infrastructure::candidate_repository::insert(conn, &candidate)?;
+            accepted += 1;
+        }
+        sink(&crate::events::RunEvent::CandidateCreated {
+            run_id: run_id.to_string(),
+            count: accepted,
+        });
+        return Ok(json!({
+            "enabled": true,
+            "candidates": accepted,
+            "answer": format!("已产出 {accepted} 条候选（进 Review 确认）。"),
+        }));
+    }
+
     Ok(json!({ "enabled": true, "answer": result.answer }))
 }
 
@@ -641,23 +700,25 @@ mod tests {
         db::apply_migrations(&mut conn).unwrap();
 
         // 创建：v1，强制只读。
-        create_skill(&conn, "paper-extractor", "论文抽取", "抽取论文要点").unwrap();
+        create_skill(&conn, "paper-extractor", "论文抽取", "抽取论文要点", false).unwrap();
         let def = resolve(&conn, "paper-extractor").unwrap();
         assert_eq!(def.version, 1);
         assert!(!def.has_permission(SkillPermission::Propose));
 
         // 内置名不可占用。
-        assert!(create_skill(&conn, "knowledge-extraction", "x", "y").is_err());
+        assert!(create_skill(&conn, "knowledge-extraction", "x", "y", false).is_err());
         // 名称规则：大写/空格拒绝。
-        assert!(create_skill(&conn, "Bad Name", "x", "y").is_err());
+        assert!(create_skill(&conn, "Bad Name", "x", "y", false).is_err());
 
-        // 更新 → 新版本；resolve 拿到 v2。
-        let v = update_skill(&conn, "paper-extractor", "论文抽取 v2", "新指令").unwrap();
+        // 更新 → 新版本（propose=true）；resolve 拿到 v2 且具备 PROPOSE。
+        let v = update_skill(&conn, "paper-extractor", "论文抽取 v2", "新指令", true).unwrap();
         assert_eq!(v, 2);
-        assert_eq!(resolve(&conn, "paper-extractor").unwrap().version, 2);
+        let def = resolve(&conn, "paper-extractor").unwrap();
+        assert_eq!(def.version, 2);
+        assert!(def.has_permission(SkillPermission::Propose));
 
         // 内置不可改 / 不可删。
-        assert!(update_skill(&conn, "knowledge-extraction", "x", "y").is_err());
+        assert!(update_skill(&conn, "knowledge-extraction", "x", "y", false).is_err());
         assert!(delete_skill(&conn, "knowledge-extraction").is_err());
 
         // 删除自定义。
@@ -679,6 +740,7 @@ pub fn create_skill(
     name: &str,
     description: &str,
     instructions: &str,
+    propose: bool,
 ) -> AppResult<()> {
     crate::domain::skill::validate_custom_name(name).map_err(AppError::Domain)?;
     if description.trim().is_empty() || instructions.trim().is_empty() {
@@ -703,8 +765,16 @@ pub fn create_skill(
     )?;
     conn.execute(
         "INSERT INTO skill_versions(skill_name, version, instructions, permissions) \
-         VALUES (?1, 1, ?2, '[\"read\"]')",
-        rusqlite::params![name, instructions.trim()],
+         VALUES (?1, 1, ?2, ?3)",
+        rusqlite::params![
+            name,
+            instructions.trim(),
+            if propose {
+                "[\"read\",\"propose\"]"
+            } else {
+                "[\"read\"]"
+            }
+        ],
     )?;
     Ok(())
 }
@@ -716,6 +786,7 @@ pub fn update_skill(
     name: &str,
     description: &str,
     instructions: &str,
+    propose: bool,
 ) -> AppResult<i64> {
     if crate::domain::skill::BUILTIN_NAMES.contains(&name) {
         return Err(AppError::Domain("内置 Skill 不可修改".into()));
@@ -740,8 +811,17 @@ pub fn update_skill(
     )?;
     conn.execute(
         "INSERT INTO skill_versions(skill_name, version, instructions, permissions) \
-         VALUES (?1, ?2, ?3, '[\"read\"]')",
-        rusqlite::params![name, new_version, instructions.trim()],
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![
+            name,
+            new_version,
+            instructions.trim(),
+            if propose {
+                "[\"read\",\"propose\"]"
+            } else {
+                "[\"read\"]"
+            }
+        ],
     )?;
     Ok(new_version)
 }

@@ -39,14 +39,26 @@ pub async fn run_skill(
 #[tauri::command]
 pub fn create_skill(state: State<'_, AppState>, input: CreateSkillInput) -> Result<(), AppError> {
     let conn = state.open()?;
-    skill_service::create_skill(&conn, &input.name, &input.description, &input.instructions)
+    skill_service::create_skill(
+        &conn,
+        &input.name,
+        &input.description,
+        &input.instructions,
+        input.propose,
+    )
 }
 
 /// 更新自定义 Skill：产生新版本（内置 Skill 拒绝）。
 #[tauri::command]
 pub fn update_skill(state: State<'_, AppState>, input: UpdateSkillInput) -> Result<i64, AppError> {
     let conn = state.open()?;
-    skill_service::update_skill(&conn, &input.name, &input.description, &input.instructions)
+    skill_service::update_skill(
+        &conn,
+        &input.name,
+        &input.description,
+        &input.instructions,
+        input.propose,
+    )
 }
 
 /// 删除自定义 Skill（内置 Skill 拒绝）。

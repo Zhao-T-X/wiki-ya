@@ -895,6 +895,9 @@ pub struct CreateSkillInput {
     pub name: String,
     pub description: String,
     pub instructions: String,
+    /// M14 PR8：true 时允许产出候选（需 documentId，词表校验同 AI 抽取）。
+    #[serde(default)]
+    pub propose: bool,
 }
 
 /// 更新自定义 Skill：产生新版本。
@@ -904,6 +907,8 @@ pub struct UpdateSkillInput {
     pub name: String,
     pub description: String,
     pub instructions: String,
+    #[serde(default)]
+    pub propose: bool,
 }
 
 /// 创建/更新 Agent Profile（M12）。

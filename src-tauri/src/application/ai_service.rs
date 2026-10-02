@@ -113,44 +113,8 @@ pub fn extract_corpus(
 
     // 宽松解析：容忍模型偶尔加上的 Markdown 围栏或前后解释文字，
     // 同时兼容「对象包裹 {\"claims\":[...]}」与「裸数组 [...]」两种返回形态。
-    let raw: Vec<RawClaim> = parse_claims(&response.answer).map_err(|err| {
-        crate::log_error!(
-            "模型返回内容无法解析为 Claim JSON：{err}；原文（前 800 字符）：{}",
-            crate::logging::clip(&response.answer, 800)
-        );
-        AppError::Internal(format!("AI 返回的 JSON 解析失败：{err}"))
-    })?;
-    crate::log_info!("抽取：解析出 {} 条候选 Claim", raw.len());
-
-    let mut extracted = Vec::with_capacity(raw.len());
-    for item in raw {
-        // 谓语合法性由受控词表把关：不合法的直接标为 rejected，绝不悄悄落库。
-        let predicate_canon = ClaimPredicate::canonical(&item.predicate);
-        let (predicate, reject_reason) = match predicate_canon {
-            Ok(parsed) => (parsed.as_str().to_string(), None),
-            Err(_) => (
-                item.predicate.clone(),
-                Some(format!("谓语 `{}` 不在受控词表中，已排除", item.predicate)),
-            ),
-        };
-
-        extracted.push(ExtractedClaim {
-            subject: item.subject,
-            predicate,
-            object_text: item.object_text,
-            content: item.content,
-            claim_type: item.claim_type,
-            polarity: item.polarity,
-            modality: item.modality,
-            confidence: item.confidence,
-            source_chunk_index: item.source_chunk,
-            source_quote: item.sentence.clone(),
-            sentence: item.sentence,
-            accepted: reject_reason.is_none(),
-            reject_reason,
-        });
-    }
-
+    let extracted = parse_and_validate_claims(&response.answer)?;
+    crate::log_info!("抽取：解析出 {} 条候选 Claim", extracted.len());
     Ok(extracted)
 }
 
@@ -215,7 +179,7 @@ struct RawClaim {
 /// 兼容两种形态：对象包裹 `{"claims":[...]}`（与 `json_object` 模式最契合）
 /// 与裸数组 `[...]`。同时容忍模型偶尔夹带的 Markdown 围栏或前后解释文字：
 /// 优先在文本中定位首个 `[`/`]` 或 `{`/`}` 包裹的 JSON 片段再解析。
-fn parse_claims(text: &str) -> Result<Vec<RawClaim>, serde_json::Error> {
+pub(crate) fn parse_claims(text: &str) -> Result<Vec<RawClaim>, serde_json::Error> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         // 不应到达这里（provider 已拦截空响应），但防御性处理。
@@ -272,6 +236,40 @@ fn parse_claims(text: &str) -> Result<Vec<RawClaim>, serde_json::Error> {
     };
 
     serde_json::from_value(serde_json::Value::Array(arr))
+}
+
+/// 抢救解析 + 受控词表校验（M14 PR8：自定义 PROPOSE Skill 复用同一闸门）。
+/// 谓语不在受控词表的条目标为 rejected（留痕），绝不悄悄落库。
+pub(crate) fn parse_and_validate_claims(text: &str) -> AppResult<Vec<ExtractedClaim>> {
+    let raw: Vec<RawClaim> = parse_claims(text)
+        .map_err(|err| AppError::Internal(format!("AI 返回的 JSON 解析失败：{err}")))?;
+    let mut extracted = Vec::with_capacity(raw.len());
+    for item in raw {
+        let predicate_canon = ClaimPredicate::canonical(&item.predicate);
+        let (predicate, reject_reason) = match predicate_canon {
+            Ok(parsed) => (parsed.as_str().to_string(), None),
+            Err(_) => (
+                item.predicate.clone(),
+                Some(format!("谓语 `{}` 不在受控词表中，已排除", item.predicate)),
+            ),
+        };
+        extracted.push(ExtractedClaim {
+            subject: item.subject,
+            predicate,
+            object_text: item.object_text,
+            content: item.content,
+            claim_type: item.claim_type,
+            polarity: item.polarity,
+            modality: item.modality,
+            confidence: item.confidence,
+            source_chunk_index: item.source_chunk,
+            source_quote: item.sentence.clone(),
+            sentence: item.sentence,
+            accepted: reject_reason.is_none(),
+            reject_reason,
+        });
+    }
+    Ok(extracted)
 }
 
 /// 用状态机扫描文本，把其中**语法完整**的 `{...}` 对象逐个抠出来。

@@ -344,6 +344,8 @@ export function create_skill(input: {
   name: string;
   description: string;
   instructions: string;
+  /** true 时允许产出候选（需 documentId，词表校验同 AI 抽取） */
+  propose?: boolean;
 }): Promise<void> {
   return call<void>('create_skill', input);
 }
@@ -353,6 +355,7 @@ export function update_skill(input: {
   name: string;
   description: string;
   instructions: string;
+  propose?: boolean;
 }): Promise<number> {
   return call<number>('update_skill', input);
 }
