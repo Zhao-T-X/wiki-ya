@@ -10,7 +10,7 @@ use crate::domain::ontology::registry;
 use crate::error::{AppError, AppResult};
 
 /// 当前 schema 版本。新增迁移文件时 +1。
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// 0001 初始 Schema。
 ///
@@ -30,6 +30,9 @@ const MIGRATION_0004: &str = include_str!("../../migrations/0004_evolution_event
 /// 0005 Extraction Run（EXTRACTION-001：异步抽取后台任务）。
 const MIGRATION_0005: &str = include_str!("../../migrations/0005_extraction_runs.sql");
 
+/// 0006 统一 Run 注册表（M1：Run → Skill → Tool → Result → Trace）。
+const MIGRATION_0006: &str = include_str!("../../migrations/0006_unified_runs.sql");
+
 /// 迁移清单 `(版本号, SQL)`：**必须按版本递增**。
 ///
 /// DB-001：启动时只执行 `version > 当前版本` 的迁移，并逐条记录版本号，
@@ -40,6 +43,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (3, MIGRATION_0003),
     (4, MIGRATION_0004),
     (5, MIGRATION_0005),
+    (6, MIGRATION_0006),
 ];
 
 /// 打开连接并设置全部 PRAGMA。

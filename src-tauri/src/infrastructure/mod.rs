@@ -9,6 +9,7 @@ pub mod db;
 pub mod document_repository;
 pub mod embedding_repository;
 pub mod extraction_run_repository;
+pub mod run_repository;
 pub mod migration_repository;
 pub mod research_repository;
 pub mod secrets;

@@ -5,9 +5,11 @@
 
 pub mod app_event;
 pub mod extraction_event;
+pub mod run_event;
 
 pub use app_event::AppEvent;
 pub use extraction_event::{ExtractionEvent, ExtractionSink};
+pub use run_event::{RunEvent, RunSink};
 
 use std::sync::Arc;
 

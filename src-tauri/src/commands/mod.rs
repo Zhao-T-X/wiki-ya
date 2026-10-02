@@ -45,3 +45,12 @@ pub fn extraction_sink(app: &tauri::AppHandle) -> crate::events::ExtractionSink 
         let _ = app.emit("extraction-events", event);
     })
 }
+
+/// 构造统一 Run 事件发射器（M1）：任何类型的 Run 都发到单一频道
+/// `run-events`，前端一个订阅即可看到全部活动（过渡期旧频道保留）。
+pub fn run_sink(app: &tauri::AppHandle) -> crate::events::RunSink {
+    let app = app.clone();
+    Arc::new(move |event| {
+        let _ = app.emit("run-events", event);
+    })
+}

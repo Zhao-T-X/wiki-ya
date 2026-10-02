@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { list_documents, list_extraction_runs } from '@/lib/api';
 import { isTerminal, STAGE_LABEL, STATUS_LABEL, STATUS_TONE } from '@/lib/extraction';
-import { useExtractionEvents } from '@/lib/useExtractionEvents';
+import { useRunEvents } from '@/lib/useRunEvents';
 import type { DocumentSummary, ExtractionRunDto } from '@/types/ipc';
 
 /**
@@ -40,8 +40,8 @@ export function ActivityPanel() {
       .catch(() => {});
   }, []);
 
-  // 任意抽取事件都触发一次刷新（任何 Run 进度/状态变化都可见）。
-  useExtractionEvents(null, () => refresh());
+  // 任意统一 Run 事件都触发一次刷新（M1：抽取/Agent/Skill 全部可见）。
+  useRunEvents(null, () => refresh());
 
   return (
     <section>

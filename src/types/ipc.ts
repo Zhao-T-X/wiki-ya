@@ -456,6 +456,23 @@ export interface ExtractionEvent {
 }
 
 // ---------------------------------------------------------------------------
+// 1.9 统一 Run 事件（M1，频道 `run-events`）
+// ---------------------------------------------------------------------------
+
+/** 与后端 `events/run_event.rs` 的 serde tag=kind + camelCase 一一对应。 */
+export type RunEvent =
+  | { kind: 'started'; runId: string; runType: string }
+  | { kind: 'stageChanged'; runId: string; stage: string }
+  | { kind: 'progress'; runId: string; processed: number; total: number }
+  | { kind: 'toolCalled'; runId: string; tool: string; summary: string }
+  | { kind: 'toolCompleted'; runId: string; tool: string; ok: boolean }
+  | { kind: 'candidateCreated'; runId: string; count: number }
+  | { kind: 'proposalCreated'; runId: string; count: number }
+  | { kind: 'completed'; runId: string }
+  | { kind: 'failed'; runId: string; error: string }
+  | { kind: 'cancelled'; runId: string };
+
+// ---------------------------------------------------------------------------
 // 1.7 Ask 问答（Phase 6）
 // ---------------------------------------------------------------------------
 

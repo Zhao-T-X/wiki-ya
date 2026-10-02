@@ -81,6 +81,9 @@ pub fn insert_context_section(
 // ---------------------------------------------------------------------------
 
 /// 开启一次 Agent 运行记录（status = started）。
+///
+/// 同时在统一登记表 `runs` 里注册（M1）：同一 id、`run_type='agent'`，
+/// 让 Trace 能跨表 JOIN。
 pub fn start_agent_run(
     conn: &Connection,
     task_type: &str,
@@ -92,6 +95,20 @@ pub fn start_agent_run(
         "INSERT INTO agent_runs(id, task_type, agent_role, model, status) \
          VALUES (?1,?2,?3,?4,'started')",
         params![id, task_type, agent_role, model],
+    )?;
+    let metadata = serde_json::json!({ "task_type": task_type, "model": model }).to_string();
+    crate::infrastructure::run_repository::register(
+        conn,
+        &id,
+        crate::domain::run::RunType::Agent,
+        agent_role.unwrap_or(task_type),
+        None,
+        &metadata,
+    )?;
+    crate::infrastructure::run_repository::set_status(
+        conn,
+        &id,
+        crate::domain::extraction::ExtractionRunStatus::Running,
     )?;
     Ok(id)
 }
@@ -118,6 +135,23 @@ pub fn finish_agent_run(
             duration_ms
         ],
     )?;
+    // 统一登记处收口（M1）：success→completed，failed→failed。
+    let run_status = if status == "success" {
+        Some(crate::domain::extraction::ExtractionRunStatus::Completed)
+    } else if status == "failed" {
+        Some(crate::domain::extraction::ExtractionRunStatus::Failed)
+    } else {
+        None
+    };
+    if let Some(run_status) = run_status {
+        crate::infrastructure::run_repository::finish(
+            conn,
+            id,
+            run_status,
+            None,
+            error_message,
+        )?;
+    }
     Ok(())
 }
 
