@@ -134,7 +134,7 @@ for n in [10_000, 50_000, 100_000]:
 
 ---
 
-## PERF-03 SQLite 连接策略  P1
+## PERF-03 SQLite 连接策略  P1  🟡 部分完成（WAL 已做，连接池待做）
 
 **一句话**：WAL 只设一次；连接池替代「每 IPC 开一个连接」。
 
@@ -154,7 +154,22 @@ PRAGMA synchronous = NORMAL;
 PRAGMA busy_timeout = 5000;
 ```
 
-### 算法
+### 进度
+
+**✅ 已完成：WAL 一次化**（commit `ad590cc`）。`open()` 只留连接级 PRAGMA，
+`enable_wal()` 由 `initialize()` 调一次并校验返回值。测试证明「后续连接不再发该
+PRAGMA 也依然是 WAL 模式」。
+
+**⬜ 未完成：连接池。** 原因与风险，需单独一步：
+- `AppState::open()` 目前返回 `Connection`；改为池守卫（Deref 到 Connection）后，
+  **约 30 处** `service(conn, …)` 都要改成 `service(&conn, …)`，diff 面远大于前面几项。
+- 真正的风险在异步命令：Tauri 的 async 命令里**绝不能**把连接守卫跨 `.await` 持有
+  （`start_extraction` / `start_research` 已经是 async 且会 await 闸门），
+  一旦误持有会跨线程持有连接，轻则 busy 报错、重则句柄失效。
+- 建议实现顺序：① 先加池并保持 `open()` 签名不变（内部复用）；② 再逐步迁移调用点；
+  ③ 最后收紧 API 禁止跨 await 持有。每步都可独立回滚。
+
+### 算法（连接池部分，待做）
 - 引入小型连接池（建议 `r2d2` + `r2d2_sqlite`，或自建 `Mutex<Vec<Connection>>`），
   容量 2~4：WAL 下「多读 + 单写」互不阻塞。
 - `AppState::conn()` 返回连接守卫；服务层签名尽量仍为 `&Connection`
