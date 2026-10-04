@@ -757,3 +757,16 @@ export interface ClaimTraceDto {
   run?: RunTraceDto;
   evolutions: EvolutionNodeDto[];
 }
+
+// ---------------------------------------------------------------------------
+// 首页概览（PERF-06：聚合 IPC）
+// ---------------------------------------------------------------------------
+
+/** 首页冷加载所需的全部数据（一次 IPC 取齐，替代原先的 5 次）。 */
+export interface HomeOverview {
+  appInfo: AppInfo;
+  registries: Registries;
+  documents: DocumentSummary[];
+  pendingReview: ReviewItem[];
+  recentRuns: ExtractionRunDto[];
+}

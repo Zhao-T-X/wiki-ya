@@ -28,6 +28,7 @@ import type {
   ExtractionRunDto,
   CandidateDto,
   CandidatePageDto,
+  HomeOverview,
   ListCandidatesInput,
   ClaimTraceDto,
   RunTraceDto,
@@ -320,6 +321,12 @@ export function run_agent_profile(input: {
   input?: unknown;
 }): Promise<string> {
   return call<string>('run_agent_profile', input);
+}
+
+/** 首页概览（PERF-06：把 app_info / registries / documents / review / runs
+ *  五次 IPC 压成一次）。 */
+export function get_home_overview(): Promise<HomeOverview> {
+  return call<HomeOverview>('get_home_overview', {});
 }
 
 /** 按 Run 分页列出候选（M6；PERF-04：游标分页，首屏只 50 条）。 */

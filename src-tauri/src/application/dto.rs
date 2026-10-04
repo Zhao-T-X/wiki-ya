@@ -641,6 +641,25 @@ pub struct AskResponse {
 }
 
 // ---------------------------------------------------------------------------
+// 1.5.1 首页概览（PERF-06：聚合 IPC）
+// ---------------------------------------------------------------------------
+
+/// 首页冷加载所需的全部数据（一次 IPC 取齐）。
+///
+/// 此前首页要发 5 次 IPC（app_info / list_registries / list_documents /
+/// list_review_items / list_extraction_runs），而**每次 IPC 都要开一条 SQLite
+/// 连接**。单用户本地应用里，这条链路是首页加载耗时的主要构成。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeOverview {
+    pub app_info: AppInfo,
+    pub registries: Registries,
+    pub documents: Vec<DocumentSummary>,
+    pub pending_review: Vec<ReviewItem>,
+    pub recent_runs: Vec<ExtractionRunDto>,
+}
+
+// ---------------------------------------------------------------------------
 // 2.0 AI 运行时设置（Phase 6 配置化）
 // ---------------------------------------------------------------------------
 

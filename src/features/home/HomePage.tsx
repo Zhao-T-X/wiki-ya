@@ -14,14 +14,11 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Textarea } from '@/components/ui/Textarea';
 import {
   analyze_document,
-  app_info,
   create_document,
   get_extraction_run,
+  get_home_overview,
   list_candidates,
   list_documents,
-  list_extraction_runs,
-  list_registries,
-  list_review_items,
   start_extraction,
   WikiError,
 } from '@/lib/api';
@@ -50,10 +47,10 @@ import type {
 export function HomePage() {
   const navigate = useNavigate();
 
-  const appInfo = useAsyncData(() => app_info(), []);
-  const registries = useAsyncData(() => list_registries(), []);
-  const documents = useAsyncData(() => list_documents({ limit: 8 }), []);
-  const reviewItems = useAsyncData(() => list_review_items({ limit: 5 }), []);
+  // PERF-06：原先这里是 5 次 IPC（app_info / list_registries / list_documents /
+  // list_review_items / list_extraction_runs），每次都要开一条 SQLite 连接。
+  // 现在一次 get_home_overview 取齐；下面按需派生，语义与条数上限均不变。
+  const overview = useAsyncData(() => get_home_overview(), []);
 
   const [content, setContent] = useState('');
   const [sourceType, setSourceType] = useState('note');
@@ -66,14 +63,16 @@ export function HomePage() {
   const [homeRunId, setHomeRunId] = useState<string | null>(null);
   const [homeRun, setHomeRun] = useState<ExtractionRunDto | null>(null);
   const [homeCandidates, setHomeCandidates] = useState<CandidateDto[]>([]);
-  const runs = useAsyncData(() => list_extraction_runs({ limit: 10 }), []);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
 
-  const aiEnabled = appInfo.data?.aiEnabled ?? false;
-  const sourceTypes = registries.data?.sourceTypes ?? ['note'];
-  const documentList = documents.data ?? [];
-  const pending = reviewItems.data ?? [];
+  const aiEnabled = overview.data?.appInfo.aiEnabled ?? false;
+  const sourceTypes = overview.data?.registries.sourceTypes ?? ['note'];
+  const documentList = overview.data?.documents ?? [];
+  const pending = overview.data?.pendingReview ?? [];
+  // loading / error 统一取聚合请求的（任一段失败即整体失败，不会展示半截数据）。
+  const sectionLoading = overview.loading;
+  const sectionError = overview.error;
 
   /** 标题留空时取正文首行——降低"必须想个标题"的摩擦。 */
   function deriveTitle(): string {
@@ -102,7 +101,7 @@ export function HomePage() {
       const doc = await create_document({ title: deriveTitle(), content, sourceType });
       setCreated(doc);
       setContent('');
-      documents.reload();
+      overview.reload();
       // 捕获即抽取：AI 已启用时自动进行，用户不需要再点一次。
       // 不 await —— 让"已保存"立刻可见，抽取结果随后填充。
       if (aiEnabled) {
@@ -141,8 +140,8 @@ export function HomePage() {
     }
   }
 
-  // 注意：依赖必须是稳定的 `runs.reload`，不能是 `runs`。
-  // useAsyncData 每次渲染都返回**新的对象字面量**，若依赖 `runs`，
+  // 注意：依赖必须是稳定的 `overview.reload`，不能是 `overview`。
+  // useAsyncData 每次渲染都返回**新的对象字面量**，若依赖整个对象，
   // 本回调每次渲染都会重建 → 下方 [homeRunId, applyHomeRun] 的 effect
   // 每次渲染都重跑 → get_extraction_run → setHomeRun(新对象) → 重渲染，
   // 形成 IPC 级无限循环（表现为「抽取进行中页面持续卡顿」）。
@@ -156,10 +155,10 @@ export function HomePage() {
           .catch(() => {});
       }
       if (isTerminal(next.status)) {
-        runs.reload();
+        overview.reload();
       }
     },
-    [runs.reload],
+    [overview.reload],
   );
 
   const onHomeEvent = useCallback(
@@ -228,7 +227,7 @@ export function HomePage() {
     try {
       const report = await analyze_document({ documentId: created.id });
       setAnalysis(report);
-      reviewItems.reload();
+      overview.reload();
     } catch (cause: unknown) {
       setFormError(cause instanceof WikiError ? cause : new WikiError('INTERNAL_ERROR', String(cause)));
     } finally {
@@ -394,12 +393,12 @@ export function HomePage() {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">需要你处理</h2>
-          {reviewItems.loading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
+          {sectionLoading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
         </div>
 
-        {reviewItems.error ? <ErrorNotice error={reviewItems.error} /> : null}
+        {sectionError ? <ErrorNotice error={overview.error} /> : null}
 
-        {!reviewItems.loading && !reviewItems.error && pending.length === 0 ? (
+        {!sectionLoading && !sectionError && pending.length === 0 ? (
           <EmptyState
             title="没有待你处理的变化"
             description="有新信息与已有知识冲突时，会出现在这里。"
@@ -434,12 +433,12 @@ export function HomePage() {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">最近文档</h2>
-          {documents.loading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
+          {sectionLoading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
         </div>
 
-        {documents.error ? <ErrorNotice error={documents.error} /> : null}
+        {sectionError ? <ErrorNotice error={overview.error} /> : null}
 
-        {!documents.loading && !documents.error && documentList.length === 0 ? (
+        {!sectionLoading && !sectionError && documentList.length === 0 ? (
           <EmptyState
             title="还没有任何文档"
             description="在上方粘贴内容并捕获，它会被切分为片段并立即可检索。"

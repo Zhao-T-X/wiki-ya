@@ -146,6 +146,8 @@ pub fn run() {
             commands::skill::create_skill,
             commands::skill::update_skill,
             commands::skill::delete_skill,
+            // ---- 首页概览（PERF-06：聚合 5 次 IPC 为 1 次）----
+            commands::overview::get_home_overview,
             // ---- candidates（M6）----
             commands::candidate::list_candidates,
             commands::candidate::decide_candidate,

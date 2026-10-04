@@ -18,6 +18,7 @@ pub mod evolution_service;
 pub mod extraction_service;
 pub mod knowledge_service;
 pub mod migration_service;
+pub mod overview_service;
 pub mod research_service;
 pub mod retrieval_service;
 pub mod review_service;
