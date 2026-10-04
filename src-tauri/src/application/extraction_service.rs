@@ -77,7 +77,17 @@ pub fn get_run(conn: &Connection, id: &str) -> AppResult<ExtractionRunDto> {
 /// 最近的 Run（新→旧）。
 pub fn list_runs(conn: &Connection, limit: usize) -> AppResult<Vec<ExtractionRunDto>> {
     let runs = extraction_run_repository::list_recent(conn, limit)?;
-    runs.iter().map(|run| to_dto(conn, run)).collect()
+    runs.iter()
+        .map(|run| {
+            let mut dto = to_dto(conn, run)?;
+            // 列表不需要 `result_json`（它是含全部抽取 Claim 的完整报告）：
+            // 列表只用于 Activity/首页概览，逐条带上会成倍放大 IPC 体积
+            // （Activity 每次 Run 事件都会整表刷新）。需要详情时走
+            // `get_extraction_run`，那里仍然返回完整结果。
+            dto.result_json = None;
+            Ok(dto)
+        })
+        .collect()
 }
 
 /// 取消一条还在跑的 Run。已终态则返回 `false`。

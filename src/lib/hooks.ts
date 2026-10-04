@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { WikiError } from '@/lib/api';
 
@@ -80,7 +80,15 @@ export function useAsyncData<T>(
     setData((prev) => (typeof updater === 'function' ? (updater as (p: T | null) => T | null)(prev) : updater));
   }, []);
 
-  return { data, loading, error, reload, setData: update };
+  // 返回值必须**记忆化**：`useAsyncData` 的结果常被放进 useCallback / useEffect
+  // 的依赖数组。若每次渲染都返回新的对象字面量，下游任何
+  // `useCallback(fn, [result])` 都会每次重建，进而让依赖它的 effect 每次
+  // 渲染重跑 —— 若该 effect 里有 setState + IPC，就会形成无限循环
+  // （曾表现为「Home 页抽取进行中持续卡顿」）。
+  return useMemo(
+    () => ({ data, loading, error, reload, setData: update }),
+    [data, loading, error, reload, update],
+  );
 }
 
 /** 输入防抖：用于「实时筛选」场景，避免每次按键都打 IPC。 */

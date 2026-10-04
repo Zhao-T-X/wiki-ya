@@ -141,19 +141,23 @@ export function HomePage() {
     }
   }
 
-  const applyHomeRun = useCallback((next: ExtractionRunDto) => {
-    setHomeRun(next);
-    if (next.status === 'completed' && next.resultJson) {
-      try {
+  // 注意：依赖必须是稳定的 `runs.reload`，不能是 `runs`。
+  // useAsyncData 每次渲染都返回**新的对象字面量**，若依赖 `runs`，
+  // 本回调每次渲染都会重建 → 下方 [homeRunId, applyHomeRun] 的 effect
+  // 每次渲染都重跑 → get_extraction_run → setHomeRun(新对象) → 重渲染，
+  // 形成 IPC 级无限循环（表现为「抽取进行中页面持续卡顿」）。
+  const applyHomeRun = useCallback(
+    (next: ExtractionRunDto) => {
+      setHomeRun(next);
+      if (next.status === 'completed' && next.resultJson) {
         list_candidates({ id: next.id }).then(setHomeCandidates).catch(() => {});
-      } catch {
-        // 结果 JSON 损坏：忽略，不让卡片崩。
       }
-    }
-    if (isTerminal(next.status)) {
-      runs.reload();
-    }
-  }, [runs]);
+      if (isTerminal(next.status)) {
+        runs.reload();
+      }
+    },
+    [runs.reload],
+  );
 
   const onHomeEvent = useCallback(
     (event: RunEvent) => {
@@ -202,15 +206,17 @@ export function HomePage() {
     get_extraction_run({ id: homeRunId }).then(applyHomeRun).catch(() => {});
   }, [homeRunId, applyHomeRun]);
 
+  const homeRunning = homeRun ? !isTerminal(homeRun.status) : false;
+
+  // 依赖稳定的 `homeRunning` 布尔量，而不是每次渲染都变的 `homeRun` 对象：
+  // 否则进度事件一更新 homeRun 就重建定时器，轮询永远等不到 1200ms。
   useEffect(() => {
-    if (!homeRunId || (homeRun && isTerminal(homeRun.status))) return;
+    if (!homeRunId || !homeRunning) return;
     const timer = setInterval(() => {
       get_extraction_run({ id: homeRunId }).then(applyHomeRun).catch(() => {});
-    }, 1200);
+    }, 1500);
     return () => clearInterval(timer);
-  }, [homeRunId, homeRun, applyHomeRun]);
-
-  const homeRunning = homeRun ? !isTerminal(homeRun.status) : false;
+  }, [homeRunId, homeRunning, applyHomeRun]);
 
   async function runAnalysis() {
     if (!created) return;

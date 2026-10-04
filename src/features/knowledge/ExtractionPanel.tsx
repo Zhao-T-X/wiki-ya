@@ -144,14 +144,19 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
     get_extraction_run({ id: runId }).then(applyRun).catch(() => {});
   }, [runId, applyRun]);
 
-  // 兜底轮询：抽取进行中时每 1.2s 拉一次快照，避免事件遗漏导致 UI 卡住。
+  // 抽取是否进行中（派生布尔量：稳定，可安全用作 effect 依赖）。
+  const running = run ? !isTerminal(run.status) : false;
+
+  // 兜底轮询：抽取进行中时每 1.5s 拉一次快照，避免事件遗漏导致 UI 卡住。
+  // 依赖稳定的 `running` 布尔量而非 `run` 对象：否则每次进度事件都会重建
+  // 定时器，轮询永远等不到间隔触发。
   useEffect(() => {
-    if (!runId || (run && isTerminal(run.status))) return;
+    if (!runId || !running) return;
     const timer = setInterval(() => {
       get_extraction_run({ id: runId }).then(applyRun).catch(() => {});
-    }, 1200);
+    }, 1500);
     return () => clearInterval(timer);
-  }, [runId, run, applyRun]);
+  }, [runId, running, applyRun]);
 
   async function startRun() {
     setStarting(true);
@@ -208,7 +213,6 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
     }
   }
 
-  const running = run ? !isTerminal(run.status) : false;
   const pendingCount = candidates.filter((c) => c.status === 'pending').length;
   const acceptedCount = candidates.filter((c) => c.status === 'accepted').length;
   const rejectedCount = candidates.filter((c) => c.status === 'rejected').length;

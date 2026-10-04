@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/Badge';
@@ -22,12 +22,12 @@ export function ActivityPanel() {
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
-  function refresh() {
+  const refresh = useCallback(() => {
     list_extraction_runs({ limit: 12 })
       .then(setRuns)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -38,10 +38,33 @@ export function ActivityPanel() {
         setTitles(map);
       })
       .catch(() => {});
-  }, []);
+  }, [refresh]);
 
-  // 任意统一 Run 事件都触发一次刷新（M1：抽取/Agent/Skill 全部可见）。
-  useRunEvents(null, () => refresh());
+  // 任意统一 Run 事件都应反映到列表，但必须**合并**：Run 事件是逐批 /
+  // 逐 token 触发的，逐个整表刷新会持续占用主线程（Ask 流式时的
+  // tokenDelta 尤其密集，而它并不改变 Run 概览）。
+  // 因此：忽略 tokenDelta + 400ms 节流合并刷新。
+  const timerRef = useRef<number | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (timerRef.current !== null) return;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      refresh();
+    }, 400);
+  }, [refresh]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  // 任意统一 Run 事件都触发一次（节流后的）刷新：抽取/Agent/Skill 全部可见。
+  useRunEvents(null, (event) => {
+    if (event.kind === 'tokenDelta') return;
+    scheduleRefresh();
+  });
 
   return (
     <section>
@@ -119,6 +142,19 @@ function ActivityItem({
             <span>开始 {trace.data.startedAt}</span>
             {trace.data.finishedAt ? <span>结束 {trace.data.finishedAt}</span> : null}
           </div>
+          {trace.data.usage ? (
+            <div className="text-muted/80">
+              真实消耗：输入 {trace.data.usage.inputTokens} · 输出{' '}
+              {trace.data.usage.outputTokens} tokens
+              {trace.data.usage.embeddingTokens > 0
+                ? ` · 向量化 ${trace.data.usage.embeddingTokens}`
+                : ''}
+              {trace.data.usage.retries > 0 ? ` · 重试 ${trace.data.usage.retries} 次` : ''}
+              {trace.data.costUsd !== undefined
+                ? ` · 约 $${trace.data.costUsd.toFixed(4)}`
+                : ''}
+            </div>
+          ) : null}
           {trace.data.agentSteps.length > 0 ? (
             <ul className="space-y-0.5">
               {trace.data.agentSteps.map((step) => (
