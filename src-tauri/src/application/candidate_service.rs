@@ -41,8 +41,16 @@ pub fn decide(conn: &mut Connection, input: DecideCandidateInput) -> AppResult<C
     }
 
     let accept = input.accept;
+
+    // 接受：复用 create_claim（同一套受控词表校验 + Evidence 落库）。
+    //
+    // 说明：此前的实现试图在外层 `Transaction` 内调用 `create_claim` /
+    // `analyze_document`，但这两个函数各自会开自己的事务，且 `Transaction`
+    // 不实现 `DerefMut`，因此该写法根本无法编译（main 长期处于半完成态）。
+    // 这里改为直接以 `&mut Connection` 调用，每一步各自保证内部原子性；
+    // 跨步骤的强一致（避免「Claim 已落库、演化分析失败」的孤儿 Claim）
+    // 留待 M15 用 savepoint 形式补回，不在本次 PR-01 范围内。
     if accept {
-        // 接受：复用 create_claim（同一套受控词表校验 + Evidence 落库）。
         let claim_input = CreateClaimInput {
             subject: candidate.subject.clone(),
             predicate: candidate.predicate.clone(),
@@ -103,6 +111,7 @@ fn to_dto(candidate: &Candidate) -> CandidateDto {
         source_chunk_index: candidate.source_chunk_index,
         source_quote: candidate.source_quote.clone(),
         sentence: candidate.sentence.clone(),
+        support_level: candidate.support_level.as_str().to_string(),
         status: candidate.status.as_str().to_string(),
         accepted_claim_id: candidate.accepted_claim_id.clone(),
         reject_reason: candidate.reject_reason.clone(),

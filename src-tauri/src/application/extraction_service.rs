@@ -18,12 +18,14 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 
+use crate::ai::accounting::TokenUsage;
+use crate::ai::config::AiConfig;
 use crate::ai::provider::default_provider;
 use crate::application::ai_service;
 use crate::application::dto::{ExtractedClaim, ExtractionReport, ExtractionRunDto};
 use crate::domain::common::ids::DocumentId;
 use crate::domain::extraction::{ExtractionRun, ExtractionRunStatus, ExtractionStage};
-use crate::domain::knowledge::candidate::{Candidate, CandidateStatus};
+use crate::domain::knowledge::candidate::{classify_support, Candidate, CandidateStatus};
 use crate::domain::knowledge::claim::ClaimObject;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
@@ -69,13 +71,13 @@ pub fn create_run(conn: &Connection, document_id: &str) -> AppResult<String> {
 /// 读取一条 Run 的快照。
 pub fn get_run(conn: &Connection, id: &str) -> AppResult<ExtractionRunDto> {
     let run = extraction_run_repository::get(conn, id)?;
-    Ok(to_dto(&run))
+    to_dto(conn, &run)
 }
 
 /// 最近的 Run（新→旧）。
 pub fn list_runs(conn: &Connection, limit: usize) -> AppResult<Vec<ExtractionRunDto>> {
     let runs = extraction_run_repository::list_recent(conn, limit)?;
-    Ok(runs.iter().map(to_dto).collect())
+    runs.iter().map(|run| to_dto(conn, run)).collect()
 }
 
 /// 取消一条还在跑的 Run。已终态则返回 `false`。
@@ -159,8 +161,18 @@ fn mark_failed(db_path: &PathBuf, run_id: &str, err: &AppError) {
     }
 }
 
-pub(crate) fn to_dto(run: &ExtractionRun) -> ExtractionRunDto {
-    ExtractionRunDto {
+pub(crate) fn to_dto(conn: &Connection, run: &ExtractionRun) -> AppResult<ExtractionRunDto> {
+    // PR-04：从序列化的 ExtractionReport 里取出真实 token 账本，并据当前
+    // AI 配置估算成本（未知模型返回 null，不编造价格）。
+    let usage = run
+        .result_json
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.get("usage").cloned())
+        .and_then(|u| serde_json::from_value::<TokenUsage>(u).ok());
+    let config = AiConfig::from_settings(conn);
+    let cost_usd = usage.and_then(|u| u.estimate_cost_usd(&config.model, &config.embedding_model));
+    Ok(ExtractionRunDto {
         id: run.id.clone(),
         document_id: run.document_id.clone(),
         status: run.status.as_str().to_string(),
@@ -174,7 +186,9 @@ pub(crate) fn to_dto(run: &ExtractionRun) -> ExtractionRunDto {
         finished_at: run.finished_at.clone(),
         error_code: run.error_code.clone(),
         error_message: run.error_message.clone(),
-    }
+        usage,
+        cost_usd,
+    })
 }
 
 /// 后台管线：状态 / 阶段 / 进度逐段持久化并推送事件（旧频道 + 统一 RunEvent 双发）。
@@ -222,6 +236,7 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
                     .into(),
             ),
             extracted: Vec::new(),
+            usage: TokenUsage::default(),
         };
         let result_json = serde_json::to_string(&report).ok();
         extraction_run_repository::finish(
@@ -245,6 +260,8 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
     let system = ai_service::extraction_system_prompt();
     let mut all: Vec<ExtractedClaim> = Vec::new();
     let mut processed = 0usize;
+    // 真实 token 账本：跨批次累计（PR-04）。
+    let mut all_usage = TokenUsage::default();
     // 分批送模型（ai_service::batch_chunks：块数 + 字符双预算），
     // 控制单次输出体量，避免被 max_tokens 截断导致 JSON 解析失败。
     for batch in ai_service::batch_chunks(&chunks) {
@@ -263,10 +280,22 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
             .collect::<Vec<_>>()
             .join("\n");
         let user = format!("文档标题：{title}\n\n正文切片：\n{corpus}");
-        let batch_claims = ai_service::extract_corpus(&conn, system.clone(), user)?;
+        let (batch_claims, batch_usage) = ai_service::extract_corpus(&conn, system.clone(), user)?;
+        all_usage.add(&batch_usage);
         // M6 修正（外部复盘准确指出）：候选**逐批立即持久化**——
         // Batch 4 失败时 Batch 1~3 的候选已经在库，不再等 Validating 统一写入。
         for claim in &batch_claims {
+            // 本地 grounding：取该候选来源切片（应在本批内）的原文，
+            // 校验 quote 是否落在其中——无需回调 LLM。
+            let chunk_text = claim
+                .source_chunk_index
+                .and_then(|idx| {
+                    batch
+                        .iter()
+                        .find(|(i, _)| *i as i64 == idx as i64)
+                        .map(|(_, c)| c.as_str())
+                });
+            let support_level = classify_support(&claim.source_quote, chunk_text);
             let candidate = Candidate {
                 id: uuid::Uuid::new_v4().to_string(),
                 run_id: run_id.to_string(),
@@ -282,6 +311,7 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
                 source_chunk_index: claim.source_chunk_index.map(|v| v as i64),
                 source_quote: claim.source_quote.clone(),
                 sentence: claim.sentence.clone(),
+                support_level,
                 status: CandidateStatus::Pending,
                 accepted_claim_id: None,
                 reject_reason: claim.reject_reason.clone(),
@@ -339,6 +369,7 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
         enabled: true,
         note: None,
         extracted: all,
+        usage: all_usage,
     };
     let result_json = serde_json::to_string(&report).ok();
     extraction_run_repository::finish(

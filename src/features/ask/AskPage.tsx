@@ -158,6 +158,17 @@ export function AskPage() {
                 条知识
                 {result.contextStats?.truncated ? ' · 检索结果因超预算被截断' : ''}
               </span>
+              {result.usage ? (
+                <span className="text-muted/70">
+                  真实消耗：输入 {result.usage.inputTokens} · 输出 {result.usage.outputTokens}{' '}
+                  tokens
+                  {result.usage.embeddingTokens > 0
+                    ? ` · 向量化 ${result.usage.embeddingTokens}`
+                    : ''}
+                  {result.usage.retries > 0 ? ` · 重试 ${result.usage.retries} 次` : ''}
+                  {result.costUsd !== undefined ? ` · 约 $${result.costUsd.toFixed(4)}` : ''}
+                </span>
+              ) : null}
               <span className="text-muted/50">来源见下方 Sources，每条可下钻到溯源</span>
             </div>
           </Card>

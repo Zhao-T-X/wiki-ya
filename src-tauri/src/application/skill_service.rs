@@ -19,7 +19,6 @@ use std::str::FromStr;
 
 use serde_json::{json, Value};
 
-use crate::ai::config::AiConfig;
 use crate::ai::rig_adapter::RigAdapter;
 use crate::application::ai_service;
 use crate::application::ask_service;
@@ -424,6 +423,7 @@ fn generic_prompt_execute(
                 source_chunk_index: None,
                 source_quote: claim.source_quote.clone(),
                 sentence: claim.sentence.clone(),
+                support_level: crate::domain::knowledge::candidate::SupportLevel::Unsupported,
                 status: crate::domain::knowledge::candidate::CandidateStatus::Pending,
                 accepted_claim_id: None,
                 reject_reason: claim.reject_reason.clone(),

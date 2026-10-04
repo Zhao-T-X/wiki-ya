@@ -297,6 +297,7 @@ pub fn list_claims(
     predicate: Option<&str>,
     status: Option<&str>,
     document_id: Option<&str>,
+    query: Option<&str>,
     limit: usize,
 ) -> AppResult<Vec<ClaimCard>> {
     let parsed_predicate = match predicate.map(str::trim).filter(|v| !v.is_empty()) {
@@ -321,6 +322,7 @@ pub fn list_claims(
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
                 .map(DocumentId::from_raw),
+            query: query.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string),
             limit,
         },
     )?;
@@ -897,8 +899,34 @@ mod tests {
     fn list_claims_rejects_unknown_filters() {
         let mut conn = memory_db();
         let _ = seed_document(&mut conn, "body");
-        assert!(list_claims(&conn, None, Some("vibes_with"), None, None, 10).is_err());
-        assert!(list_claims(&conn, None, None, Some("nonsense"), None, 10).is_err());
+        assert!(list_claims(&conn, None, Some("vibes_with"), None, None, None, 10).is_err());
+        assert!(list_claims(&conn, None, None, Some("nonsense"), None, None, 10).is_err());
+    }
+
+    #[test]
+    fn list_claims_text_query_matches_subject_content_and_object() {
+        let mut conn = memory_db();
+        let doc = seed_document(&mut conn, "body");
+        // 用受控谓语 `uses`：React 19 通过主语命中；SQLite 通过宾语命中；
+        // config 通过 content 命中。主语名会被归一化（小写），故断言不区分大小写。
+        let _ = create_claim(&mut conn, manual("React", "uses", Some("19"), &doc));
+        let _ = create_claim(&mut conn, manual("wiki-ya", "uses", Some("SQLite"), &doc));
+        let mut config_claim = manual("config", "uses", None, &doc);
+        config_claim.content = Some("database connection pool size".into());
+        let _ = create_claim(&mut conn, config_claim);
+
+        let by_subject = list_claims(&conn, None, None, None, None, Some("React"), 50).unwrap();
+        assert_eq!(by_subject.len(), 1, "按主语名检索");
+        assert_eq!(by_subject[0].subject_name.to_lowercase(), "react");
+
+        let by_object = list_claims(&conn, None, None, None, None, Some("SQLite"), 50).unwrap();
+        assert_eq!(by_object.len(), 1, "按宾语名检索");
+
+        let by_content = list_claims(&conn, None, None, None, None, Some("connection pool"), 50).unwrap();
+        assert_eq!(by_content.len(), 1, "按内容检索");
+
+        let by_missing = list_claims(&conn, None, None, None, None, Some("nonexistent"), 50).unwrap();
+        assert!(by_missing.is_empty(), "无匹配应返回空");
     }
 
     #[test]

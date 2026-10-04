@@ -195,11 +195,25 @@ pub struct ClaimFilter {
     pub status: Option<ClaimStatus>,
     /// 按来源文档过滤（通过 evidence 反查）。
     pub document_id: Option<DocumentId>,
+    /// 自由文本检索：匹配主语名 / 宾语名 / 内容 / 宾语文本（子串，大小写不敏感）。
+    pub query: Option<String>,
     pub limit: usize,
+}
+
+/// 把用户输入转成 `LIKE` 模式：转义 `%`/`_`/`\` 后用 `%...%` 包裹。
+///
+/// 用户只想要"包含这些字"的子串搜索，转义避免输入里的通配符改变语义。
+fn like_pattern(raw: &str) -> String {
+    let escaped = raw
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }
 
 /// 列出 Claim。
 pub fn list(conn: &Connection, filter: &ClaimFilter) -> AppResult<Vec<ClaimRow>> {
+    let pattern = filter.query.as_deref().map(like_pattern);
     let sql = format!(
         "{CLAIM_SELECT}
          WHERE (?1 IS NULL OR c.subject_id = ?1)
@@ -208,8 +222,12 @@ pub fn list(conn: &Connection, filter: &ClaimFilter) -> AppResult<Vec<ClaimRow>>
            AND (?4 IS NULL OR EXISTS (
                  SELECT 1 FROM evidence e3
                  WHERE e3.claim_id = c.id AND e3.document_id = ?4))
+           AND (?5 IS NULL OR s.name LIKE ?5 ESCAPE '\\'
+                     OR c.content LIKE ?5 ESCAPE '\\'
+                     OR o.name LIKE ?5 ESCAPE '\\'
+                     OR c.object_text LIKE ?5 ESCAPE '\\')
          ORDER BY c.created_at DESC, c.id
-         LIMIT ?5"
+         LIMIT ?6"
     );
     let limit = filter.limit.clamp(1, 500) as i64;
     let mut statement = conn.prepare(&sql)?;
@@ -219,6 +237,7 @@ pub fn list(conn: &Connection, filter: &ClaimFilter) -> AppResult<Vec<ClaimRow>>
             filter.predicate.map(|p| p.as_str()),
             filter.status.map(|s| s.as_str()),
             filter.document_id.as_ref().map(|id| id.as_str()),
+            pattern,
             limit,
         ],
         map_claim,

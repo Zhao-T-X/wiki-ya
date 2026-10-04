@@ -7,6 +7,7 @@
 use rusqlite::{params, Connection};
 use serde_json::json;
 
+use crate::ai::accounting::TokenUsage;
 use crate::ai::agents::AgentRole;
 use crate::ai::provider::default_provider;
 use crate::ai::rig_adapter::RigAdapter;
@@ -53,6 +54,8 @@ pub fn start_research(
             note: Some("AI 未启用：请先在 Settings → AI 运行时 配置 API Key，再启动研究。".into()),
             steps: Vec::new(),
             review_id: None,
+            usage: None,
+            cost_usd: None,
         });
     }
 
@@ -91,6 +94,12 @@ pub fn start_research(
                 findings,
             )?;
 
+            // PR-05：多轮 ReAct 的真实用量 + 成本估算。
+            let usage =
+                TokenUsage::from_completion(run.input_tokens, run.output_tokens, run.retries);
+            let cfg = crate::ai::config::AiConfig::from_settings(conn);
+            let cost_usd = usage.estimate_cost_usd(&cfg.model, &cfg.embedding_model);
+
             Ok(ResearchReport {
                 task_id,
                 question,
@@ -107,6 +116,8 @@ pub fn start_research(
                     })
                     .collect(),
                 review_id: Some(review_id.as_str().to_string()),
+                usage: Some(usage),
+                cost_usd,
             })
         }
         Err(err) => {

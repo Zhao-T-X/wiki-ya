@@ -13,6 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::accounting::TokenUsage;
+
 // ---------------------------------------------------------------------------
 // 元信息
 // ---------------------------------------------------------------------------
@@ -454,6 +456,9 @@ pub struct ListClaimsInput {
     pub status: Option<String>,
     #[serde(default)]
     pub document_id: Option<String>,
+    /// 自由文本检索（子串匹配主语 / 宾语 / 内容）。
+    #[serde(default)]
+    pub query: Option<String>,
     #[serde(default)]
     pub limit: Option<usize>,
 }
@@ -513,6 +518,8 @@ pub struct ExtractionReport {
     /// 未启用 / 空结果等说明，UI 原样展示。
     pub note: Option<String>,
     pub extracted: Vec<ExtractedClaim>,
+    /// 本次抽取的真实 token 账本（PR-04：来自 provider 回报，非估算）。
+    pub usage: TokenUsage,
 }
 
 // ---------------------------------------------------------------------------
@@ -540,6 +547,12 @@ pub struct ExtractionRunDto {
     pub error_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
+    /// 本次运行累计的真实 token 账本（PR-04），未完成为 `null`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+    /// 本次运行的成本估算（美元，PR-04）；模型未知时为 `null`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +598,12 @@ pub struct AskResponse {
     /// 本次问答的 Run id（M9）：前端可用 `get_run_trace` 查看运行详情。
     #[serde(default)]
     pub agent_run_id: Option<String>,
+    /// 本次问答的真实 token 账本（PR-05：来自 provider 回报，非估算）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+    /// 成本估算（美元）；模型未知时为 `null`（不编造价格）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -658,6 +677,12 @@ pub struct ResearchReport {
     pub steps: Vec<AgentStepDto>,
     /// Findings 对应的 Review 记录 id（结果只进 Review，不直接落库）。
     pub review_id: Option<String>,
+    /// 本次研究（多轮 ReAct）累计的真实 token 账本（PR-05）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+    /// 成本估算（美元）；模型未知时为 `null`（不编造价格）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -820,6 +845,8 @@ pub struct CandidateDto {
     pub source_chunk_index: Option<i64>,
     pub source_quote: Option<String>,
     pub sentence: Option<String>,
+    /// 原文锚定支持度：directly / partially / unsupported（PR-03）。
+    pub support_level: String,
     pub status: String,
     pub accepted_claim_id: Option<String>,
     pub reject_reason: Option<String>,
@@ -850,6 +877,9 @@ pub struct EvidenceNodeDto {
     pub chunk_id: Option<String>,
     pub chunk_index: Option<i64>,
     pub quote: Option<String>,
+    /// 来源切片原文（Chunk 层可见；切片重建/缺失时为 null）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_text: Option<String>,
 }
 
 /// 演化节点：该 Claim 参与的关系（supersedes / contradicts / …）。
@@ -872,6 +902,8 @@ pub struct CandidateNodeDto {
     pub candidate_id: String,
     pub run_id: String,
     pub status: String,
+    /// 原文锚定支持度：directly / partially / unsupported（PR-03）。
+    pub support_level: String,
     pub created_at: String,
 }
 

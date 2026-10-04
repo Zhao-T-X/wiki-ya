@@ -5,13 +5,14 @@
 
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::domain::knowledge::candidate::{Candidate, CandidateStatus};
+use crate::domain::knowledge::candidate::{Candidate, CandidateStatus, SupportLevel};
 use crate::error::AppResult;
 use crate::infrastructure::db::{now, parse_col};
 
 const COLS: &str = "id, run_id, document_id, subject, predicate, object_text, content, \
                      claim_type, polarity, modality, confidence, source_chunk_index, \
-                     source_quote, sentence, status, accepted_claim_id, reject_reason, created_at";
+                     source_quote, sentence, support_level, status, accepted_claim_id, \
+                     reject_reason, created_at";
 
 /// 插入一条候选（created_at 由仓储生成）。
 pub fn insert(conn: &Connection, candidate: &Candidate) -> AppResult<()> {
@@ -19,8 +20,8 @@ pub fn insert(conn: &Connection, candidate: &Candidate) -> AppResult<()> {
     conn.execute(
         "INSERT INTO candidates(id, run_id, document_id, subject, predicate, object_text, \
          content, claim_type, polarity, modality, confidence, source_chunk_index, \
-         source_quote, sentence, status, reject_reason, created_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+         source_quote, sentence, support_level, status, reject_reason, created_at) \
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
         rusqlite::params![
             candidate.id,
             candidate.run_id,
@@ -36,6 +37,7 @@ pub fn insert(conn: &Connection, candidate: &Candidate) -> AppResult<()> {
             candidate.source_chunk_index,
             candidate.source_quote,
             candidate.sentence,
+            candidate.support_level.as_str(),
             candidate.status.as_str(),
             candidate.reject_reason,
             created_at
@@ -94,16 +96,18 @@ fn map_candidate(r: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
         source_chunk_index: r.get(11)?,
         source_quote: r.get(12)?,
         sentence: r.get(13)?,
-        status: parse_col::<CandidateStatus>(r, 14)?,
-        accepted_claim_id: r.get(15)?,
-        reject_reason: r.get(16)?,
-        created_at: r.get(17)?,
+        support_level: parse_col::<SupportLevel>(r, 14)?,
+        status: parse_col::<CandidateStatus>(r, 15)?,
+        accepted_claim_id: r.get(16)?,
+        reject_reason: r.get(17)?,
+        created_at: r.get(18)?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::knowledge::candidate::{Candidate, CandidateStatus, SupportLevel};
     use crate::infrastructure::db;
 
     fn sample(id: &str, run_id: &str) -> Candidate {
@@ -122,6 +126,7 @@ mod tests {
             source_chunk_index: Some(3),
             source_quote: Some("Rust enables 安全并发".into()),
             sentence: Some("Rust enables 安全并发。".into()),
+            support_level: SupportLevel::Partially,
             status: CandidateStatus::Pending,
             accepted_claim_id: None,
             reject_reason: None,
@@ -186,6 +191,7 @@ mod tests {
         let c1 = get(&conn, "c1").unwrap().unwrap();
         assert_eq!(c1.status, CandidateStatus::Accepted);
         assert_eq!(c1.accepted_claim_id.as_deref(), Some("claim-9"));
+        assert_eq!(c1.support_level, SupportLevel::Partially);
         let c2 = get(&conn, "c2").unwrap().unwrap();
         assert_eq!(c2.status, CandidateStatus::Rejected);
         assert_eq!(c2.reject_reason.as_deref(), Some("与已有知识重复"));

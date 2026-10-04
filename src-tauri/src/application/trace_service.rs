@@ -30,9 +30,10 @@ pub fn get_trace(conn: &Connection, run_id: &str) -> AppResult<RunTraceDto> {
 
     let extraction_run = if run.run_type == RunType::Extraction {
         // 该 Run 一定有明细（同一 id 两处登记）。
-        Some(extraction_service::to_dto(&extraction_run_repository::get(
-            conn, run_id,
-        )?))
+        Some(extraction_service::to_dto(
+            conn,
+            &extraction_run_repository::get(conn, run_id)?,
+        )?)
     } else {
         None
     };
@@ -84,7 +85,7 @@ pub fn get_claim_trace(conn: &Connection, claim_id: &str) -> AppResult<ClaimTrac
     // 1) 证据链：evidence → documents / chunks。
     let mut stmt = conn.prepare(
         "SELECT e.id, e.document_id, COALESCE(d.title, ''), e.chunk_id, \
-         c.chunk_index, e.quote FROM evidence e \
+         c.chunk_index, e.quote, c.content FROM evidence e \
          LEFT JOIN documents d ON d.id = e.document_id \
          LEFT JOIN chunks c ON c.id = e.chunk_id \
          WHERE e.claim_id = ?1 ORDER BY e.created_at",
@@ -97,13 +98,14 @@ pub fn get_claim_trace(conn: &Connection, claim_id: &str) -> AppResult<ClaimTrac
             chunk_id: r.get(3)?,
             chunk_index: r.get(4)?,
             quote: r.get(5)?,
+            chunk_text: r.get(6)?,
         })
     })?;
 
     // 2) 候选链：哪次抽取产生的这条知识。
     let candidate: Option<CandidateNodeDto> = conn
         .query_row(
-            "SELECT id, run_id, status, created_at FROM candidates \
+            "SELECT id, run_id, status, support_level, created_at FROM candidates \
              WHERE accepted_claim_id = ?1 ORDER BY created_at DESC LIMIT 1",
             rusqlite::params![claim_id],
             |r| {
@@ -111,7 +113,8 @@ pub fn get_claim_trace(conn: &Connection, claim_id: &str) -> AppResult<ClaimTrac
                     candidate_id: r.get(0)?,
                     run_id: r.get(1)?,
                     status: r.get(2)?,
-                    created_at: r.get(3)?,
+                    support_level: r.get(3)?,
+                    created_at: r.get(4)?,
                 })
             },
         )
@@ -159,3 +162,65 @@ fn rows_to<T>(
     let rows = stmt.query_map(params, map)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::capture_service;
+    use crate::application::dto::{CreateClaimInput, CreateDocumentInput};
+    use crate::application::knowledge_service;
+    use crate::infrastructure::db::tests::memory_db;
+
+    /// 证据绑定了来源切片时，溯源必须把 chunk 原文带回（Chunk 层可见）。
+    #[test]
+    fn claim_trace_returns_chunk_text_for_evidence() {
+        let mut conn = memory_db();
+        let doc = capture_service::create_document(
+            &mut conn,
+            CreateDocumentInput {
+                title: "Note".into(),
+                content: "wiki-ya 使用 React 19。".into(),
+                source_type: None,
+                source_uri: None,
+                metadata: None,
+            },
+        )
+        .unwrap();
+        // 显式插一个 chunk（避免与 create_document 自带切片冲突），作为证据坐标。
+        conn.execute(
+            "INSERT INTO chunks(id, document_id, chunk_index, start_offset, end_offset, content, char_count) \
+             VALUES ('ck-trace', ?1, 99, 0, 12, 'wiki-ya 使用 React 19。', 12)",
+            rusqlite::params![doc.id.as_str()],
+        )
+        .unwrap();
+
+        let input = CreateClaimInput {
+            subject: "wiki-ya".into(),
+            predicate: "uses".into(),
+            object: Some("React 19".into()),
+            content: None,
+            claim_type: None,
+            polarity: None,
+            modality: None,
+            condition: None,
+            confidence: None,
+            document_id: doc.id.clone(),
+            chunk_id: Some("ck-trace".into()),
+            quote: Some("React 19".into()),
+            status: None,
+            observed_at: None,
+        };
+        let card = knowledge_service::create_claim(&mut conn, input).unwrap();
+
+        let trace = get_claim_trace(&conn, &card.id).unwrap();
+        assert_eq!(trace.evidences.len(), 1, "应有一条证据");
+        let evidence = &trace.evidences[0];
+        assert_eq!(
+            evidence.chunk_text.as_deref(),
+            Some("wiki-ya 使用 React 19。"),
+            "chunk 原文应被带回"
+        );
+        assert_eq!(evidence.chunk_index, Some(99));
+    }
+}
+

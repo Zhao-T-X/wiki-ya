@@ -148,6 +148,8 @@ export interface ListClaimsInput {
   predicate?: string;
   status?: string;
   documentId?: string;
+  /** 自由文本检索（子串匹配主语 / 宾语 / 内容）。 */
+  query?: string;
   limit?: number;
 }
 
@@ -234,6 +236,10 @@ export interface ClaimCard {
    * `excluded` = 不参与检索（rejected / archived / draft），与「历史」不同。
    */
   lifecycle: 'current' | 'superseded' | 'excluded';
+  /** 该 Claim 关联的证据条数（Rust 已返回，前端此前漏声明）。 */
+  evidenceCount: number;
+  /** 可读陈述（抽取未给 content 时由主语/谓语/宾语拼出）。 */
+  displayText: string;
 }
 
 export interface ClaimDetail {
@@ -410,6 +416,14 @@ export interface ExtractionReport {
 // 1.6.1 Extraction Run（EXTRACTION-001：异步抽取后台任务）
 // ---------------------------------------------------------------------------
 
+/** 真实 token 账本（PR-04：来自 provider 回报，非估算）。 */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  embeddingTokens: number;
+  retries: number;
+}
+
 /** 一条抽取运行的快照（前端轮询 / 事件后回看用）。 */
 export interface ExtractionRunDto {
   id: string;
@@ -428,6 +442,10 @@ export interface ExtractionRunDto {
   finishedAt: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+  /** 本次运行累计的真实 token 用量，未完成为 undefined */
+  usage?: TokenUsage;
+  /** 成本估算（美元）；模型未知时为 undefined（不编造价格） */
+  costUsd?: number;
 }
 
 /** 后台运行实时事件（经 Tauri 频道 `extraction-events` 推送）。 */
@@ -526,6 +544,10 @@ export interface AskResponse {
   contextStats: ContextStats | null;
   /** 本次问答的 Run id（M9）：可查看运行详情。 */
   agentRunId?: string;
+  /** 本次问答的真实 token 账本（PR-05） */
+  usage?: TokenUsage;
+  /** 成本估算（美元）；模型未知时为 undefined */
+  costUsd?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +593,10 @@ export interface ResearchReport {
   steps: AgentStep[];
   /** Findings 对应的 Review 记录 id（结果只进 Review，不直接落库） */
   reviewId: string | null;
+  /** 本次研究（多轮 ReAct）累计的真实 token 账本（PR-05） */
+  usage?: TokenUsage;
+  /** 成本估算（美元）；模型未知时为 undefined */
+  costUsd?: number;
 }
 
 export interface StartResearchInput {
@@ -660,6 +686,8 @@ export interface CandidateDto {
   sourceChunkIndex?: number;
   sourceQuote?: string;
   sentence?: string;
+  /** 原文锚定支持度：directly / partially / unsupported（PR-03）。 */
+  supportLevel?: 'directly' | 'partially' | 'unsupported';
   status: 'pending' | 'accepted' | 'rejected';
   acceptedClaimId?: string;
   rejectReason?: string;
@@ -674,6 +702,8 @@ export interface EvidenceNodeDto {
   chunkId?: string;
   chunkIndex?: number;
   quote?: string;
+  /** 来源切片原文（Chunk 层），切片缺失/重建时为 undefined。 */
+  chunkText?: string;
 }
 
 /** Claim 溯源：演化关系节点。 */
@@ -692,6 +722,8 @@ export interface CandidateNodeDto {
   candidateId: string;
   runId: string;
   status: string;
+  /** 原文锚定支持度：directly / partially / unsupported（PR-03）。 */
+  supportLevel?: 'directly' | 'partially' | 'unsupported';
   createdAt: string;
 }
 

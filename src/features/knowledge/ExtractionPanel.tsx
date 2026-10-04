@@ -49,6 +49,9 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<WikiError | null>(null);
   const [deciding, setDeciding] = useState<string[]>([]);
+  // PR-03：默认只把"已直接锚定原文(directly)"的候选放进正常 Review 流；
+  // partially/unsupported 需人工补证据后才可接受（可一键展开查看）。
+  const [groundedOnly, setGroundedOnly] = useState(true);
 
   const refreshCandidates = useCallback((id: string) => {
     list_candidates({ id }).then(setCandidates).catch(() => {});
@@ -197,7 +200,8 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   }
 
   async function acceptAllPending() {
-    const pendingList = candidates.filter((c) => c.status === 'pending');
+    // PR-03：批量接受只针对当前可见的 pending（默认仅 directly）。
+    const pendingList = shown.filter((c) => c.status === 'pending');
     for (const candidate of pendingList) {
       // 顺序执行：后端 accept 自带演化分析，且逐条更新 UI 状态。
       await decide(candidate, true);
@@ -209,6 +213,11 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   const acceptedCount = candidates.filter((c) => c.status === 'accepted').length;
   const rejectedCount = candidates.filter((c) => c.status === 'rejected').length;
   const decidingSet = new Set(deciding);
+  // PR-03：默认仅展示已直接锚定原文的候选（正常 Review 流）。
+  const shown = groundedOnly
+    ? candidates.filter((c) => c.supportLevel === 'directly')
+    : candidates;
+  const hiddenCount = candidates.length - shown.length;
 
   // 阶段时间线：run.stage 之前的 ✓、当前 ●、之后的 —。
   const stageIndex = run ? STAGE_ORDER.indexOf(run.stage as (typeof STAGE_ORDER)[number]) : -1;
@@ -272,6 +281,13 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
           {run.candidatesFound > 0 ? (
             <p className="mt-2 text-[10px] text-muted">已发现 {run.candidatesFound} 条候选</p>
           ) : null}
+          {run.usage ? (
+            <p className="mt-1 text-[10px] text-muted/80">
+              真实消耗：输入 {run.usage.inputTokens} · 输出 {run.usage.outputTokens} tokens
+              {run.usage.retries > 0 ? ` · 重试 ${run.usage.retries} 次` : ''}
+              {run.costUsd !== undefined ? ` · 约 $${run.costUsd.toFixed(4)}` : ''}
+            </p>
+          ) : null}
         </Card>
       ) : null}
 
@@ -304,26 +320,43 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-muted">
-              {candidates.length} 条候选
+              {shown.length} 条候选
               {acceptedCount > 0 ? ` · 已接受 ${acceptedCount}` : ''}
               {rejectedCount > 0 ? ` · 已拒绝 ${rejectedCount}` : ''}
               {pendingCount > 0 ? ` · 待确认 ${pendingCount}` : ''}
               {run && run.changesFound > 0 ? ` · 预估新增 ${run.changesFound} 条（以确认时演化分析为准）` : ''}
             </span>
-            {pendingCount > 1 ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                loading={deciding.length > 0}
-                onClick={acceptAllPending}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGroundedOnly((v) => !v)}
+                className="text-[10px] text-accent hover:underline"
+                title="仅显示已直接锚定原文的候选（partially/unsupported 需人工补证据）"
               >
-                全部接受
-              </Button>
-            ) : null}
+                {groundedOnly ? '显示全部' : '仅已锚定原文'}
+              </button>
+              {pendingCount > 1 ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={deciding.length > 0}
+                  onClick={acceptAllPending}
+                >
+                  全部接受
+                </Button>
+              ) : null}
+            </div>
           </div>
 
-          {candidates.map((candidate) => {
+          {hiddenCount > 0 && groundedOnly ? (
+            <p className="text-[10px] text-muted/70">
+              另有 {hiddenCount} 条未直接锚定原文（partially / unsupported），已折叠——展开后可人工补证据再接受。
+            </p>
+          ) : null}
+
+          {shown.map((candidate) => {
             const isDeciding = decidingSet.has(candidate.id);
+            const badge = supportBadge(candidate.supportLevel);
             return (
               <Card key={candidate.id} className="p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -334,6 +367,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
                       {candidate.objectText ? (
                         <span className="text-muted">→ {candidate.objectText}</span>
                       ) : null}
+                      <Badge tone={badge.tone}>{badge.label}</Badge>
                       {candidate.status === 'accepted' ? (
                         <Badge tone="ok">已接受</Badge>
                       ) : candidate.status === 'rejected' ? (
@@ -343,9 +377,19 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
                     {candidate.content ? (
                       <p className="text-[11px] leading-relaxed text-muted">{candidate.content}</p>
                     ) : null}
+                    {candidate.sourceQuote ? (
+                      <p className="text-[10px] leading-relaxed text-muted/70">
+                        锚定原文：“{candidate.sourceQuote}”
+                      </p>
+                    ) : null}
                     {candidate.sentence ? (
                       <p className="text-[10px] leading-relaxed text-muted/70">
                         “{candidate.sentence}”
+                      </p>
+                    ) : null}
+                    {candidate.supportLevel && candidate.supportLevel !== 'directly' ? (
+                      <p className="text-[10px] text-warn">
+                        ⚠ 未直接锚定原文（{badge.label}）：接受前请确认证据可验证。
                       </p>
                     ) : null}
                     {candidate.rejectReason ? (
@@ -387,4 +431,20 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
       ) : null}
     </section>
   );
+}
+
+/** 候选原文锚定支持度的展示（PR-03）。 */
+function supportBadge(
+  level?: 'directly' | 'partially' | 'unsupported',
+): { label: string; tone: 'ok' | 'neutral' | 'warn' } {
+  switch (level) {
+    case 'directly':
+      return { label: '已锚定原文', tone: 'ok' };
+    case 'partially':
+      return { label: '部分锚定', tone: 'neutral' };
+    case 'unsupported':
+      return { label: '未锚定原文', tone: 'warn' };
+    default:
+      return { label: '支持度未知', tone: 'neutral' };
+  }
 }

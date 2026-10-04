@@ -53,6 +53,7 @@ pub fn list_claims(
         input.predicate.as_deref(),
         input.status.as_deref(),
         input.document_id.as_deref(),
+        input.query.as_deref(),
         input.limit.unwrap_or(100),
     )
 }

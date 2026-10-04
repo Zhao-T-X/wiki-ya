@@ -43,6 +43,12 @@ pub struct AgentRequest {
 pub struct AgentResult {
     pub answer: String,
     pub model: String,
+    /// 真实输入 token 数（来自 rig 的 `usage`；未上报为 0）。
+    pub input_tokens: u64,
+    /// 真实输出 token 数。
+    pub output_tokens: u64,
+    /// 重试次数（非空体回退流式的额外一次；正常为 0）。
+    pub retries: u32,
     /// 工具调用步骤（Golden 对比：与 Legacy `AgentRun.steps` 对齐）。
     pub steps: Vec<AgentStep>,
     /// 实际执行轮数。
@@ -96,29 +102,36 @@ impl RigAdapter {
         // 与自研 provider 相同的「流式专用端点」记忆（M14 热修复用）：
         // DeepSeek 推理端点等非流式恒为空体，只有流式才有正文。
         let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
-        let text = if is_streaming_only(&stream_key) {
-            self.stream_collect(&request).await?
+        let (text, usage, retries) = if is_streaming_only(&stream_key) {
+            (self.stream_collect(&request).await?, None, 0)
         } else {
-            let non_stream = self.complete_once_inner(&request).await?;
+            let (non_stream, usage) = self.complete_once_inner(&request).await?;
             if non_stream.trim().is_empty() {
                 crate::log_warn!("rig 非流式返回空文本，端点 {stream_key} 标记为流式专用并转流式");
                 mark_streaming_only(&stream_key);
-                self.stream_collect(&request).await?
+                // 回退流式：rig 流式不回传 usage，记一次重试、用量留 0（诚实）。
+                (self.stream_collect(&request).await?, None, 1)
             } else {
-                non_stream
+                (non_stream, Some(usage), 0)
             }
         };
 
         Ok(AgentResult {
             answer: text,
             model: self.config.model.clone(),
+            input_tokens: usage.map(|u| u.input_tokens).unwrap_or(0),
+            output_tokens: usage.map(|u| u.output_tokens).unwrap_or(0),
+            retries,
             steps: Vec::new(),
             rounds: 1,
         })
     }
 
-    /// 非流式单轮补全，返回纯文本。
-    async fn complete_once_inner(&self, request: &AgentRequest) -> AppResult<String> {
+    /// 非流式单轮补全，返回纯文本 + 真实用量（rig 的 `usage`）。
+    async fn complete_once_inner(
+        &self,
+        request: &AgentRequest,
+    ) -> AppResult<(String, rig::completion::Usage)> {
         let client = self.completions_client()?;
         let model = openai::GenericCompletionModel::new(client, self.config.model.clone());
         let response = model
@@ -129,7 +142,7 @@ impl RigAdapter {
             .send()
             .await
             .map_err(|err| AppError::Internal(format!("rig 补全失败：{err}")))?;
-        Ok(join_choice_text(response.choice))
+        Ok((join_choice_text(response.choice), response.usage))
     }
 
     /// 流式补全：逐帧收集文本（推理模型的 reasoning 帧被自然跳过）。
@@ -339,6 +352,9 @@ impl RigAdapter {
         let system = format!("{}\n\n{}", role.system_prompt(), tools_manual());
         let mut user = format!("目标：{goal}");
         let mut steps: Vec<AgentStep> = Vec::new();
+        // PR-05：跨轮累计真实用量（每轮 rig 响应的 usage）。
+        let mut acc_input: u64 = 0;
+        let mut acc_output: u64 = 0;
 
         let notify = |event: RunEvent| {
             if let Some(sink) = sink {
@@ -369,6 +385,8 @@ impl RigAdapter {
                     .await
                     .map_err(|err| AppError::Internal(format!("rig 补全失败：{err}")))
             })?;
+            acc_input += raw.usage.input_tokens;
+            acc_output += raw.usage.output_tokens;
             let text = join_choice_text(raw.choice);
             if text.trim().is_empty() {
                 return Err(AppError::Internal("rig 模型未返回任何文本".into()));
@@ -382,6 +400,9 @@ impl RigAdapter {
                     return Ok(AgentResult {
                         answer,
                         model: self.config.model.clone(),
+                        input_tokens: acc_input,
+                        output_tokens: acc_output,
+                        retries: 0,
                         steps,
                         rounds: round,
                     });

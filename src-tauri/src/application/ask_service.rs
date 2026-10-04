@@ -13,9 +13,10 @@ use crate::ai::config::AiConfig;
 use crate::ai::context::{
     compile, estimate_tokens, Budget, ContextItem, ContextKind, ContextPack, LoadStrategy,
 };
+use crate::ai::accounting::TokenUsage;
 use crate::ai::provider::{default_provider, CompletionRequest};
 use crate::application::dto::{AskRequest, AskResponse, AskSource};
-use crate::application::retrieval_service::retrieve;
+use crate::application::retrieval_service::retrieve_with_usage;
 use crate::domain::ontology::registry;
 use crate::error::AppResult;
 use crate::events::{RunEvent, RunSink};
@@ -40,6 +41,8 @@ pub fn ask(
             sources: Vec::new(),
             context_stats: None,
             agent_run_id: None,
+            usage: None,
+            cost_usd: None,
         });
     }
 
@@ -79,8 +82,9 @@ pub fn ask(
 
     let system = role.system_prompt().to_string();
 
-    // 1) 检索候选（语义可用时融合，否则词法）。
-    let passages = retrieve(conn, &request.question, RETRIEVE_LIMIT, true)?;
+    // 1) 检索候选（语义可用时融合，否则词法）；同时带回真实 embedding 用量。
+    let (passages, retrieval_usage) =
+        retrieve_with_usage(conn, &request.question, RETRIEVE_LIMIT, true)?;
 
     // 2) 映射成 ContextItem：优先级由排名 + 检索分数决定。
     let items: Vec<ContextItem> = passages
@@ -231,6 +235,16 @@ pub fn ask(
         notify_run(RunEvent::Completed { run_id });
     }
 
+    // PR-05/06：真实用量（补全来自 provider 的 usage；检索 embedding 已累计），
+    // 并据当前配置估算成本。
+    let mut usage = TokenUsage::from_completion(
+        response.input_tokens as u64,
+        response.output_tokens as u64,
+        response.retries,
+    );
+    usage.add(&retrieval_usage);
+    let cost_usd = usage.estimate_cost_usd(&config.model, &config.embedding_model);
+
     Ok(AskResponse {
         question: request.question,
         answer: response.text,
@@ -243,6 +257,8 @@ pub fn ask(
         },
         sources,
         context_stats: Some(pack.stats),
+        usage: Some(usage),
+        cost_usd,
     })
 }
 

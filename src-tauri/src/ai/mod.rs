@@ -17,6 +17,7 @@
 //! 永不直接访问 Repository（TDD §50、Rule 7）。抽取编排放在 `application/ai_service.rs`，
 //! 本模块只提供 Provider 抽象、配置、上下文编排与 Agent/工具骨架。
 
+pub mod accounting;
 pub mod agents;
 pub mod config;
 pub mod context;

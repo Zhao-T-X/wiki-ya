@@ -6,6 +6,7 @@
 
 use rusqlite::Connection;
 
+use crate::ai::accounting::TokenUsage;
 use crate::ai::config::AiConfig;
 use crate::ai::context::ContextKind;
 use crate::ai::provider;
@@ -25,26 +26,38 @@ pub struct RetrievedPassage {
     pub source_id: Option<String>,
 }
 
-/// 混合检索入口。
+/// 混合检索入口（稳定契约：只返回片段，不暴露用量）。
 ///
 /// `use_semantic` 为 true 且 embeddings 可用时走语义 + 词法 RRF 融合；
-/// 否则（或语义不可用时）诚实降级为纯词法。函数签名是稳定契约，
-/// semantic-retrieval 成员在此之内扩展，不改变对外签名与返回结构。
+/// 否则（或语义不可用时）诚实降级为纯词法。
 pub fn retrieve(
     conn: &Connection,
     query: &str,
     limit: usize,
     use_semantic: bool,
 ) -> AppResult<Vec<RetrievedPassage>> {
+    retrieve_with_usage(conn, query, limit, use_semantic).map(|(passages, _)| passages)
+}
+
+/// 混合检索入口 + 真实 embedding 用量（PR-06）。
+///
+/// 与 [`retrieve`] 行为完全一致，额外返回本次语义检索消耗的真实
+/// embedding token（来自 provider 的 `usage`）；语义路径未触发/降级时为 0。
+pub fn retrieve_with_usage(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+    use_semantic: bool,
+) -> AppResult<(Vec<RetrievedPassage>, TokenUsage)> {
     // 词法检索始终执行，作为保底与融合基座。
     let lexical = lexical_search(conn, query, limit)?;
 
     if use_semantic {
-        if let Ok(semantic) = semantic_search(conn, query, limit) {
-            return Ok(fuse_rrf(lexical, semantic, limit));
+        if let Ok((semantic, usage)) = semantic_search_with_usage(conn, query, limit) {
+            return Ok((fuse_rrf(lexical, semantic, limit), usage));
         }
     }
-    Ok(lexical)
+    Ok((lexical, TokenUsage::default()))
 }
 
 /// 词法检索（现有 search_service）。
@@ -72,8 +85,20 @@ pub fn semantic_search(
     query: &str,
     limit: usize,
 ) -> AppResult<Vec<RetrievedPassage>> {
-    // 把所有失败路径统一降级为空（保留签名与对外语义）。
-    let run = || -> AppResult<Vec<RetrievedPassage>> {
+    semantic_search_with_usage(conn, query, limit).map(|(passages, _)| passages)
+}
+
+/// 语义检索 + 真实 embedding 用量（PR-06）。
+///
+/// 失败路径（无 Key / embed 报错 / 空库）统一降级为 `(Vec::new(), 默认用量)`：
+/// 报错时我们无法确知已消耗多少 token，故记 0（诚实，不猜测）。
+pub fn semantic_search_with_usage(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> AppResult<(Vec<RetrievedPassage>, TokenUsage)> {
+    let mut usage = TokenUsage::default();
+    let mut run = || -> AppResult<Vec<RetrievedPassage>> {
         let config = AiConfig::from_settings(conn);
         let provider = provider::default_provider(conn);
 
@@ -85,7 +110,9 @@ pub fn semantic_search(
         let texts: Vec<String> = chunks.iter().map(|(_, c)| c.clone()).collect();
 
         // 向量化全部 chunk，并覆盖写入（PRIMARY KEY 幂等）。
-        let embeddings = provider.embed(&texts)?;
+        let embedded_chunks = provider.embed(&texts)?;
+        usage.embedding_tokens += embedded_chunks.prompt_tokens as u64;
+        let embeddings = embedded_chunks.vectors;
         if embeddings.len() != chunks.len() {
             return Ok(Vec::new());
         }
@@ -94,8 +121,9 @@ pub fn semantic_search(
         }
 
         // 向量化 query。
-        let query_vecs = provider.embed(&vec![query.to_string()])?;
-        let query_vec = match query_vecs.into_iter().next() {
+        let embedded_query = provider.embed(&vec![query.to_string()])?;
+        usage.embedding_tokens += embedded_query.prompt_tokens as u64;
+        let query_vec = match embedded_query.vectors.into_iter().next() {
             Some(v) if !v.is_empty() => v,
             _ => return Ok(Vec::new()),
         };
@@ -103,7 +131,10 @@ pub fn semantic_search(
         embedding_repository::nearest_chunks(conn, &query_vec, limit)
     };
 
-    Ok(run().unwrap_or_else(|_| Vec::new()))
+    match run() {
+        Ok(passages) => Ok((passages, usage)),
+        Err(_) => Ok((Vec::new(), TokenUsage::default())),
+    }
 }
 
 /// RRF（Reciprocal Rank Fusion）融合词法与语义结果（TDD §2119）。

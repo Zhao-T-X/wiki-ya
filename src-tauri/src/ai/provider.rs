@@ -62,6 +62,12 @@ impl CompletionRequest {
 pub struct CompletionResponse {
     pub text: String,
     pub model: String,
+    /// 真实输入 token 数（来自 provider 的 `usage`；未上报为 0）。
+    pub input_tokens: u32,
+    /// 真实输出 token 数。
+    pub output_tokens: u32,
+    /// 重试次数（首个成功尝试之外的额外尝试；正常为 0）。
+    pub retries: u32,
 }
 
 /// LLM 供应商抽象。
@@ -86,7 +92,15 @@ pub trait Provider: Send + Sync {
     }
 
     /// 向量化：把一批文本转成 embedding。不可用时应返回错误。
-    fn embed(&self, texts: &[String]) -> AppResult<Vec<Vec<f32>>>;
+    fn embed(&self, texts: &[String]) -> AppResult<EmbeddingOutput>;
+}
+
+/// 向量化输出（PR-04：携带真实 token 用量）。
+#[derive(Debug, Clone)]
+pub struct EmbeddingOutput {
+    pub vectors: Vec<Vec<f32>>,
+    /// 真实 embedding 输入 token 数（来自响应的 `usage`；未上报为 0）。
+    pub prompt_tokens: u32,
 }
 
 /// 离线 provider：从不联网，仅用于「未配置 Key」时的诚实降级。
@@ -107,7 +121,7 @@ impl Provider for OfflineProvider {
         ))
     }
 
-    fn embed(&self, _texts: &[String]) -> AppResult<Vec<Vec<f32>>> {
+    fn embed(&self, _texts: &[String]) -> AppResult<EmbeddingOutput> {
         Err(AppError::Internal(
             "AI 未启用：未配置 WIKIYA_API_KEY，无法进行向量化。".into(),
         ))
@@ -155,6 +169,15 @@ struct ChatRequest {
     /// 避免对不支持的端点造成干扰（不支持时会返回 4xx，被重试逻辑跳过）。
     #[serde(skip_serializing_if = "Option::is_none")]
     enable_thinking: Option<bool>,
+    /// 流式时要求端点回传用量（OpenAI 兼容：`stream_options.include_usage`）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
+}
+
+/// 流式用量选项（仅流式补全附带，用于拿回真实 token 用量）。
+#[derive(serde::Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -166,6 +189,18 @@ struct ResponseFormat {
 #[derive(serde::Deserialize)]
 struct ChatResponse {
     choices: Vec<Choice>,
+    /// 真实 token 用量（OpenAI 兼容端点均返回；缺失时按 0 处理）。
+    #[serde(default)]
+    usage: Option<Usage>,
+}
+
+/// 补全 token 用量（OpenAI 兼容格式）。
+#[derive(serde::Deserialize, Default, Clone, Copy)]
+struct Usage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
 }
 
 #[derive(serde::Deserialize)]
@@ -196,6 +231,14 @@ struct EmbeddingRequest {
 #[derive(serde::Deserialize)]
 struct EmbeddingResponse {
     data: Vec<EmbeddingData>,
+    #[serde(default)]
+    usage: Option<EmbeddingUsage>,
+}
+
+#[derive(serde::Deserialize, Default, Clone, Copy)]
+struct EmbeddingUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
 }
 
 #[derive(serde::Deserialize)]
@@ -208,6 +251,9 @@ struct EmbeddingData {
 struct StreamChunk {
     #[serde(default)]
     choices: Vec<StreamChoice>,
+    /// 流式结束帧携带的真实用量（`stream_options.include_usage=true`）。
+    #[serde(default)]
+    usage: Option<Usage>,
 }
 
 #[derive(serde::Deserialize)]
@@ -284,7 +330,9 @@ impl Provider for OpenAiProvider {
         }
 
         let mut last_diag: Option<String> = None;
+        let mut attempt_index = 0u32;
         for (use_json, max_tokens, disable_thinking) in attempts {
+            attempt_index += 1;
             let response_format = if use_json {
                 Some(ResponseFormat {
                     kind: "json_object".into(),
@@ -310,6 +358,7 @@ impl Provider for OpenAiProvider {
                 response_format,
                 stream: None,
                 enable_thinking: disable_thinking.then_some(false),
+                stream_options: None,
             };
 
             crate::log_debug!(
@@ -413,6 +462,7 @@ impl Provider for OpenAiProvider {
                 }
             };
 
+            let usage = parsed.usage.unwrap_or_default();
             let choice_count = parsed.choices.len();
             let finish_reason = parsed.choices.first().and_then(|c| c.finish_reason.clone());
             let (content, reasoning) = parsed
@@ -434,6 +484,9 @@ impl Provider for OpenAiProvider {
                 return Ok(CompletionResponse {
                     text,
                     model: self.config.model.clone(),
+                    input_tokens: usage.prompt_tokens,
+                    output_tokens: usage.completion_tokens,
+                    retries: attempt_index.saturating_sub(1),
                 });
             }
 
@@ -447,6 +500,9 @@ impl Provider for OpenAiProvider {
                 return Ok(CompletionResponse {
                     text: json,
                     model: self.config.model.clone(),
+                    input_tokens: usage.prompt_tokens,
+                    output_tokens: usage.completion_tokens,
+                    retries: attempt_index.saturating_sub(1),
                 });
             }
 
@@ -505,9 +561,12 @@ impl Provider for OpenAiProvider {
         )))
     }
 
-    fn embed(&self, texts: &[String]) -> AppResult<Vec<Vec<f32>>> {
+    fn embed(&self, texts: &[String]) -> AppResult<EmbeddingOutput> {
         if texts.is_empty() {
-            return Ok(Vec::new());
+            return Ok(EmbeddingOutput {
+                vectors: Vec::new(),
+                prompt_tokens: 0,
+            });
         }
         let api_key = self
             .config
@@ -541,7 +600,10 @@ impl Provider for OpenAiProvider {
             .json()
             .map_err(|err| AppError::Internal(format!("向量化响应解析失败：{err}")))?;
 
-        Ok(parsed.data.into_iter().map(|d| d.embedding).collect())
+        Ok(EmbeddingOutput {
+            vectors: parsed.data.into_iter().map(|d| d.embedding).collect(),
+            prompt_tokens: parsed.usage.unwrap_or_default().prompt_tokens,
+        })
     }
 
     /// SSE 流式补全：`stream: true` 逐行读 `data:` 帧，把 `delta.content`
@@ -578,6 +640,8 @@ impl Provider for OpenAiProvider {
             // 流式是 Ask/Research 的主路径：绝不附带供应商特有字段，
             // 否则严格端点（如 OpenAI）会因未知参数直接 400。
             enable_thinking: None,
+            // 标准 OpenAI 字段：要求流式结束帧回传真实 token 用量。
+            stream_options: Some(StreamOptions { include_usage: true }),
         };
 
         let client = reqwest::blocking::Client::new();
@@ -637,6 +701,7 @@ impl Provider for OpenAiProvider {
         let mut full = String::new();
         let mut reasoning_full = String::new();
         let mut finish_reason: Option<String> = None;
+        let mut usage: Option<Usage> = None;
         let mut frames = 0usize;
         for line in reader.lines() {
             let line = line.map_err(|err| AppError::Internal(format!("流式读取失败：{err}")))?;
@@ -651,6 +716,9 @@ impl Provider for OpenAiProvider {
                 crate::log_trace!("忽略非 JSON 流式帧：{}", crate::logging::clip(data, 200));
                 continue; // 容忍心跳/注释帧
             };
+            if let Some(u) = chunk.usage {
+                usage = Some(u);
+            }
             let Some(choice) = chunk.choices.into_iter().next() else {
                 continue;
             };
@@ -688,6 +756,9 @@ impl Provider for OpenAiProvider {
                 return Ok(CompletionResponse {
                     text: json,
                     model: self.config.model.clone(),
+                    input_tokens: usage.unwrap_or_default().prompt_tokens,
+                    output_tokens: usage.unwrap_or_default().completion_tokens,
+                    retries: 0,
                 });
             }
             crate::log_warn!(
@@ -698,9 +769,13 @@ impl Provider for OpenAiProvider {
             return Err(AppError::Internal("AI 流式响应为空".into()));
         }
 
+        let usage = usage.unwrap_or_default();
         Ok(CompletionResponse {
             text: full,
             model: self.config.model.clone(),
+            input_tokens: usage.prompt_tokens,
+            output_tokens: usage.completion_tokens,
+            retries: 0,
         })
     }
 }

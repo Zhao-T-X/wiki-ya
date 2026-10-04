@@ -187,6 +187,13 @@ export function ResearchPage() {
             <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/90">
               {report.answer}
             </div>
+            {report.usage ? (
+              <p className="mt-3 border-t border-line pt-3 text-[10px] text-muted/80">
+                真实消耗：输入 {report.usage.inputTokens} · 输出 {report.usage.outputTokens} tokens
+                {report.usage.retries > 0 ? ` · 重试 ${report.usage.retries} 次` : ''}
+                {report.costUsd !== undefined ? ` · 约 $${report.costUsd.toFixed(4)}` : ''}
+              </p>
+            ) : null}
           </Card>
 
           {report.steps.length > 0 ? (

@@ -9,6 +9,7 @@
 use rusqlite::Connection;
 use serde::Deserialize;
 
+use crate::ai::accounting::TokenUsage;
 use crate::ai::config::AiConfig;
 use crate::ai::rig_adapter::RigAdapter;
 use crate::application::dto::{ExtractedClaim, ExtractionReport};
@@ -38,6 +39,7 @@ pub fn extract_claims(conn: &Connection, document_id: &str) -> AppResult<Extract
                     .into(),
             ),
             extracted: Vec::new(),
+            usage: TokenUsage::default(),
         });
     }
 
@@ -45,6 +47,7 @@ pub fn extract_claims(conn: &Connection, document_id: &str) -> AppResult<Extract
     // 产生「EOF while parsing a string」这类解析失败（EXTRACTION-001 复盘）。
     let system = extraction_system_prompt();
     let mut extracted = Vec::new();
+    let mut total_usage = TokenUsage::default();
     for batch in batch_chunks(&chunks) {
         let corpus = batch
             .iter()
@@ -52,7 +55,9 @@ pub fn extract_claims(conn: &Connection, document_id: &str) -> AppResult<Extract
             .collect::<Vec<_>>()
             .join("\n");
         let user = format!("文档标题：{}\n\n正文切片：\n{}", document.title, corpus);
-        extracted.extend(extract_corpus(conn, system.clone(), user)?);
+        let (batch_claims, usage) = extract_corpus(conn, system.clone(), user)?;
+        extracted.extend(batch_claims);
+        total_usage.add(&usage);
     }
 
     Ok(ExtractionReport {
@@ -61,6 +66,7 @@ pub fn extract_claims(conn: &Connection, document_id: &str) -> AppResult<Extract
         enabled: true,
         note: None,
         extracted,
+        usage: total_usage,
     })
 }
 
@@ -100,7 +106,7 @@ pub fn extract_corpus(
     conn: &Connection,
     system: String,
     user: String,
-) -> AppResult<Vec<ExtractedClaim>> {
+) -> AppResult<(Vec<ExtractedClaim>, TokenUsage)> {
     crate::log_info!("抽取：发起一次模型补全");
     // M14 PR5：抽取的模型调用走 RigAdapter（含流式专用端点兜底——
     // DeepSeek 推理端点不再每次浪费 4×30s 的非流式空体等待）。
@@ -115,7 +121,13 @@ pub fn extract_corpus(
     // 同时兼容「对象包裹 {\"claims\":[...]}」与「裸数组 [...]」两种返回形态。
     let extracted = parse_and_validate_claims(&response.answer)?;
     crate::log_info!("抽取：解析出 {} 条候选 Claim", extracted.len());
-    Ok(extracted)
+    // 真实用量：来自 rig 的 `usage`（输入/输出 token + 重试次数），非估算。
+    let usage = TokenUsage::from_completion(
+        response.input_tokens,
+        response.output_tokens,
+        response.retries,
+    );
+    Ok((extracted, usage))
 }
 
 /// 每批送进模型的硬上限：块数与累计字符双约束。
