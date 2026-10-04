@@ -24,13 +24,18 @@ pub async fn start_extraction(
 ) -> Result<String, AppError> {
     let conn = state.open()?;
     let run_id = extraction_service::create_run(&conn, &input.id)?;
+    // State 是借用，先把需要的值克隆出来再进异步闭包。
+    let db_path = state.db_path.clone();
+    let run_id_for_task = run_id.clone();
 
     // 命令立刻返回；后台任务在独立线程跑完整管线。
-    tauri::async_runtime::spawn(extraction_service::execute(
-        app,
-        state.db_path.clone(),
-        run_id.clone(),
-    ));
+    //
+    // PERF-05：并发闸门在**任务内部**获取——命令不阻塞，排队中的 Run 只是
+    // 等许可（UI 上仍能看到这个 Run 处于 queued/running），不会把前端挂住。
+    tauri::async_runtime::spawn(async move {
+        let _permit = crate::ai::scheduler::acquire_extraction().await;
+        extraction_service::execute(app, db_path, run_id_for_task).await;
+    });
 
     Ok(run_id)
 }

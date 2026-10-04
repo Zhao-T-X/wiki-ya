@@ -506,7 +506,40 @@ pub struct ExtractedClaim {
     pub reject_reason: Option<String>,
 }
 
-/// 一篇文档的抽取报告。
+/// 后台抽取 Run 的结果摘要（PERF-05）——写入 `extraction_runs.result_json`。
+///
+/// 刻意**不含**候选明细：候选是 `candidates` 表的一等公民，Run 只是产生过程。
+/// 旧实现把全部候选同时放进内存 `Vec` **和** `result_json`，对大文档是成倍的
+/// 内存峰值，而明细在 DB 里本来就有一份（纯重复）。要看待审候选请用
+/// `list_candidates`（游标分页）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractionRunSummary {
+    pub document_id: String,
+    /// 实际使用的 provider 名（如 `openai-compatible` / `offline`）。
+    pub provider: String,
+    /// 本次是否真的跑了模型；false 时各计数均为 0。
+    pub enabled: bool,
+    /// 未启用等说明，UI 如实展示。
+    pub note: Option<String>,
+    /// 产出的候选总数（均已落库）。
+    pub candidate_count: i64,
+    /// 按原文锚定支持度分档（PR-03：本地校验 quote∈chunk 的结果）。
+    pub directly: i64,
+    pub partially: i64,
+    pub unsupported: i64,
+    /// 与已有知识签名重复的候选数。
+    pub duplicates: i64,
+    /// 预估新增知识数（以用户确认时的演化分析为准）。
+    pub changes_estimate: i64,
+    /// 本次运行的真实 token 账本（PR-04）。
+    pub usage: TokenUsage,
+}
+
+/// 一篇文档的抽取报告（**同步预览**路径，不落库）。
+///
+/// 注意：后台 Run 的 `result_json` 用的是 [`ExtractionRunSummary`]（不含明细），
+/// 本结构仅供预览 / 内置 Skill `knowledge-extraction` 使用。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtractionReport {
@@ -538,7 +571,8 @@ pub struct ExtractionRunDto {
     pub processed_chunks: i64,
     pub candidates_found: i64,
     pub changes_found: i64,
-    /// 完成后的抽取结果（序列化的 [`ExtractionReport`]），未完成为 `null`。
+    /// 完成后的抽取结果（序列化的 [`ExtractionRunSummary`] 摘要，**不含候选明细**），
+    /// 未完成为 `null`。候选明细走 `list_candidates`。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_json: Option<String>,
     pub started_at: String,

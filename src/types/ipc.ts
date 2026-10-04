@@ -436,7 +436,8 @@ export interface ExtractionRunDto {
   processedChunks: number;
   candidatesFound: number;
   changesFound: number;
-  /** 完成后的抽取结果（JSON 字符串，序列化自 ExtractionReport），未完成为 null */
+  /** 完成后的抽取结果摘要（JSON 字符串，序列化自 ExtractionRunSummary）。
+   *  **不含候选明细**（PERF-05）——候选明细走 list_candidates。 */
   resultJson: string | null;
   startedAt: string;
   finishedAt: string | null;

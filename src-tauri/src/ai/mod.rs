@@ -24,4 +24,5 @@ pub mod context;
 pub mod provider;
 pub mod rig_adapter;
 pub mod runtime;
+pub mod scheduler;
 pub mod tools;

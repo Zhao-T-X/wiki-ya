@@ -22,10 +22,12 @@ use crate::ai::accounting::TokenUsage;
 use crate::ai::config::AiConfig;
 use crate::ai::provider::default_provider;
 use crate::application::ai_service;
-use crate::application::dto::{ExtractedClaim, ExtractionReport, ExtractionRunDto};
+use crate::application::dto::{ExtractedClaim, ExtractionRunDto, ExtractionRunSummary};
 use crate::domain::common::ids::DocumentId;
 use crate::domain::extraction::{ExtractionRun, ExtractionRunStatus, ExtractionStage};
-use crate::domain::knowledge::candidate::{classify_support, Candidate, CandidateStatus};
+use crate::domain::knowledge::candidate::{
+    classify_support, Candidate, CandidateStatus, SupportLevel,
+};
 use crate::domain::knowledge::claim::ClaimObject;
 use crate::domain::run::RunType;
 use crate::error::{AppError, AppResult};
@@ -236,7 +238,7 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
     // 动手前确认 AI 可用：不可用则诚实结束（结果标记为未启用），不报错。
     let provider = default_provider(&conn);
     if !provider.enabled() {
-        let report = ExtractionReport {
+        let report = ExtractionRunSummary {
             document_id: document_id.clone(),
             provider: provider.name().to_string(),
             enabled: false,
@@ -245,7 +247,12 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
                  配置后重启应用即可启用抽取。"
                     .into(),
             ),
-            extracted: Vec::new(),
+            candidate_count: 0,
+            directly: 0,
+            partially: 0,
+            unsupported: 0,
+            duplicates: 0,
+            changes_estimate: 0,
             usage: TokenUsage::default(),
         };
         let result_json = serde_json::to_string(&report).ok();
@@ -268,10 +275,16 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
         stage: ExtractionStage::Extracting.as_str().to_string(),
     });
     let system = ai_service::extraction_system_prompt();
-    let mut all: Vec<ExtractedClaim> = Vec::new();
     let mut processed = 0usize;
     // 真实 token 账本：跨批次累计（PR-04）。
     let mut all_usage = TokenUsage::default();
+    // PERF-05：不再把全部候选 accumulate 到 Finalizing（那是纯内存开销——
+    // 明细已逐批落库，`result_json` 也只存摘要）。此处只保留统计量。
+    let mut candidate_count = 0i64;
+    let mut accepted_count = 0i64;
+    let mut support_counts = SupportCounts::default();
+    // 重复候选跨批次增量统计：签名集只建一次，不必留全部候选在内存里。
+    let mut dup_counter = DuplicateCounter::new(&conn, &document_id);
     // 分批送模型（ai_service::batch_chunks：块数 + 字符双预算），
     // 控制单次输出体量，避免被 max_tokens 截断导致 JSON 解析失败。
     for batch in ai_service::batch_chunks(&chunks) {
@@ -306,6 +319,7 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
                         .map(|(_, c)| c.as_str())
                 });
             let support_level = classify_support(&claim.source_quote, chunk_text);
+            support_counts.observe(support_level);
             let candidate = Candidate {
                 id: uuid::Uuid::new_v4().to_string(),
                 run_id: run_id.to_string(),
@@ -328,9 +342,14 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
                 created_at: String::new(),
             };
             candidate_repository::insert(&conn, &candidate)?;
+            candidate_count += 1;
         }
+        // PERF-05：重复候选增量统计（不必留全部候选在内存里）。
+        let accepted_in_batch: Vec<&ExtractedClaim> =
+            batch_claims.iter().filter(|c| c.accepted).collect();
+        accepted_count += accepted_in_batch.len() as i64;
+        dup_counter.observe(&accepted_in_batch);
         let batch_count = batch_claims.len();
-        all.extend(batch_claims);
         processed += batch.len();
         extraction_run_repository::set_progress(&conn, run_id, processed as i64, total as i64)?;
         run_sink(&RunEvent::Progress {
@@ -351,8 +370,7 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
         run_id: run_id.to_string(),
         stage: ExtractionStage::Validating.as_str().to_string(),
     });
-    let accepted: Vec<&ExtractedClaim> = all.iter().filter(|c| c.accepted).collect();
-    let candidates_found = all.len() as i64;
+    let candidates_found = candidate_count;
 
     // ---- Comparing（预估变更数：签名去重，仅供排序参考；真正的演化
     // 分类在用户 accept 候选时由 analyze_document 产生并进 Review）----
@@ -362,8 +380,8 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
         run_id: run_id.to_string(),
         stage: ExtractionStage::Comparing.as_str().to_string(),
     });
-    let duplicates = count_duplicates(&conn, &document_id, &accepted);
-    let changes = (accepted.len().saturating_sub(duplicates)) as i64;
+    let duplicates = dup_counter.duplicates();
+    let changes = accepted_count.saturating_sub(duplicates);
     extraction_run_repository::set_counts(&conn, run_id, candidates_found, changes)?;
 
     // ---- Finalizing ----
@@ -373,12 +391,17 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
         run_id: run_id.to_string(),
         stage: ExtractionStage::Finalizing.as_str().to_string(),
     });
-    let report = ExtractionReport {
+    let report = ExtractionRunSummary {
         document_id: document_id.clone(),
         provider: provider.name().to_string(),
         enabled: true,
         note: None,
-        extracted: all,
+        candidate_count,
+        directly: support_counts.directly,
+        partially: support_counts.partially,
+        unsupported: support_counts.unsupported,
+        duplicates,
+        changes_estimate: changes,
         usage: all_usage,
     };
     let result_json = serde_json::to_string(&report).ok();
@@ -399,39 +422,78 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
     Ok(())
 }
 
-/// 估算"相对库内已有知识的新增变更数"：把已接受的候选与同文档现有 Claim 做签名比对。
-fn count_duplicates(conn: &Connection, document_id: &str, accepted: &[&ExtractedClaim]) -> usize {
-    let existing =
-        match claim_repository::list_by_document(conn, &DocumentId::from_raw(document_id)) {
-            Ok(rows) => rows,
-            Err(_) => return 0,
-        };
-    let mut signatures: HashSet<(String, String, String)> = HashSet::new();
-    for row in &existing {
-        let object = object_text_of(&row.claim.object).to_lowercase();
-        signatures.insert((
-            row.subject_name.to_lowercase(),
-            row.claim.predicate.to_string(),
-            object,
-        ));
-    }
-    let mut duplicates = 0usize;
-    for candidate in accepted {
-        let object = candidate
-            .object_text
-            .clone()
-            .unwrap_or_default()
-            .to_lowercase();
-        let signature = (
-            candidate.subject.to_lowercase(),
-            candidate.predicate.clone(),
-            object,
-        );
-        if signatures.contains(&signature) {
-            duplicates += 1;
+/// 支持度分档计数（PERF-05：写进 Run 摘要，供 UI 如实展示锚定质量）。
+#[derive(Default)]
+struct SupportCounts {
+    directly: i64,
+    partially: i64,
+    unsupported: i64,
+}
+
+impl SupportCounts {
+    fn observe(&mut self, level: SupportLevel) {
+        match level {
+            SupportLevel::Directly => self.directly += 1,
+            SupportLevel::Partially => self.partially += 1,
+            SupportLevel::Unsupported => self.unsupported += 1,
         }
     }
-    duplicates
+}
+
+/// 跨批次增量统计重复候选（PERF-05）。
+///
+/// 旧实现为了算这一个数而把全部候选 accumulate 到 Finalizing。改为：库内已有
+/// Claim 的签名集**只建一次**，之后逐批喂入并累加，内存里不留候选。
+///
+/// 语义保持与旧实现**完全一致**（已知局限：同文档内互相重复的候选不计入，
+/// 因为候选签名不回插集合）——性能 PR 不应顺手改变上报的数字。
+struct DuplicateCounter {
+    signatures: HashSet<(String, String, String)>,
+    duplicates: usize,
+}
+
+impl DuplicateCounter {
+    /// 建一次库内已有 Claim 的签名集；读取失败时退化为空集（重复数记 0）。
+    fn new(conn: &Connection, document_id: &str) -> Self {
+        let mut signatures: HashSet<(String, String, String)> = HashSet::new();
+        if let Ok(rows) = claim_repository::list_by_document(conn, &DocumentId::from_raw(document_id))
+        {
+            for row in &rows {
+                signatures.insert((
+                    row.subject_name.to_lowercase(),
+                    row.claim.predicate.to_string(),
+                    object_text_of(&row.claim.object).to_lowercase(),
+                ));
+            }
+        }
+        DuplicateCounter {
+            signatures,
+            duplicates: 0,
+        }
+    }
+
+    /// 喂入一批**已通过受控词表校验**的候选，累加命中已有签名的数量。
+    fn observe(&mut self, accepted: &[&ExtractedClaim]) {
+        for candidate in accepted {
+            let object = candidate
+                .object_text
+                .clone()
+                .unwrap_or_default()
+                .to_lowercase();
+            let signature = (
+                candidate.subject.to_lowercase(),
+                candidate.predicate.clone(),
+                object,
+            );
+            if self.signatures.contains(&signature) {
+                self.duplicates += 1;
+            }
+        }
+    }
+
+    fn duplicates(&self) -> i64 {
+        self.duplicates as i64
+    }
 }
 
 /// 从 Claim 的宾语里取出可读文本（用于去重签名）。

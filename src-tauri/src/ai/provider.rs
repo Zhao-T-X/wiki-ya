@@ -128,6 +128,18 @@ impl Provider for OfflineProvider {
     }
 }
 
+/// 进程级共享 HTTP client（PERF-05）。
+///
+/// `reqwest::blocking::Client` 内部持有连接池；每次请求都新建 client 会让
+/// keep-alive / 连接复用失效。而抽取与检索都会**连续**发出多次调用
+/// （embedding 分批、补全重试、流式重试），复用是白拿的收益。
+///
+/// 只在首次使用时构造（`OnceLock`），之后全进程共享。
+pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::blocking::Client::new)
+}
+
 /// 进程级记忆：非流式恒为空体、只有流式才有正文的端点
 /// （典型：DeepSeek 推理模型经某些网关，HTTP 200 + 0 字符挂起 30s）。
 /// key = `base_url|model`。发现一次即记住，后续补全直接走流式，
@@ -289,7 +301,7 @@ impl Provider for OpenAiProvider {
             .clone()
             .ok_or_else(|| AppError::Internal("AI 未配置 API Key".into()))?;
 
-        let client = reqwest::blocking::Client::new();
+        let client = shared_http_client();
         let url = format!(
             "{}/chat/completions",
             self.config.base_url.trim_end_matches('/')
@@ -579,7 +591,7 @@ impl Provider for OpenAiProvider {
             input: texts.to_vec(),
         };
 
-        let client = reqwest::blocking::Client::new();
+        let client = shared_http_client();
         let url = format!("{}/embeddings", self.config.base_url.trim_end_matches('/'));
         let response = client
             .post(url)
@@ -644,7 +656,7 @@ impl Provider for OpenAiProvider {
             stream_options: Some(StreamOptions { include_usage: true }),
         };
 
-        let client = reqwest::blocking::Client::new();
+        let client = shared_http_client();
         let url = format!(
             "{}/chat/completions",
             self.config.base_url.trim_end_matches('/')

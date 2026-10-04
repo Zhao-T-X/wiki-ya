@@ -46,7 +46,8 @@ regex = "1"
 # AgentRunner/AgentRun/Hook 的迁移在后续 PR；本阶段只引入依赖 + Adapter。
 rig = { version = "0.42", package = "rig-core" }
 futures-util = "0.3"
-tokio = { version = "1", features = ["rt"] }
+# PERF-05：sync（并发闸门 Semaphore）、time + macros（闸门单测的 timeout / #[tokio::test]）。
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 # SEC-001：API Key 加密存储。AES-256-GCM + 每次加密独立随机 nonce。
 # 纯 Rust 实现（RustCrypto），无 C 依赖，全平台一致。
 aes-gcm = "0.11"
