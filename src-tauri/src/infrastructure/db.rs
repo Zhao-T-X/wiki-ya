@@ -74,28 +74,47 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (13, MIGRATION_0013),
 ];
 
-/// 打开连接并设置全部 PRAGMA。
+/// 打开连接并设置**连接级** PRAGMA。
 ///
 /// 每次操作都开一条新连接（本地单用户 + WAL 下比共享 mutex 更快）。
-/// 因此**所有** PRAGMA 必须在这里设置——它是唯一的连接入口。
+/// 这里只设置**连接级**参数；`journal_mode` 是**数据库级**持久设置，
+/// 由 [`initialize`] 一次性写入（见该函数与 PERF-05 说明）。
 pub fn open(path: &Path) -> AppResult<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
-         PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
          PRAGMA busy_timeout = 5000;",
     )?;
     Ok(conn)
 }
 
-/// 建表并应用迁移（每次启动都调用；内部按版本增量执行）。
+/// 把数据库切到 WAL 模式（**一次性**，仅在 [`initialize`] 里调用）。
+///
+/// WAL 是**数据库级**属性：设置后会写进库文件头，之后打开的每条连接
+/// 自动继承。原先放在 [`open`] 里意味着**每个 IPC** 都要重发一次
+/// `PRAGMA journal_mode = WAL`——而这条 PRAGMA 并非纯读：它要取库锁、
+/// 判断是否需恢复/checkpoint，是实打实的开销。改为启动时设一次即可。
+fn enable_wal(conn: &Connection) -> AppResult<()> {
+    let mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
+    if !mode.eq_ignore_ascii_case("wal") {
+        // 诚实失败：拿不到 WAL 就说明并发读会被写阻塞，不能静默继续。
+        return Err(crate::error::AppError::Internal(format!(
+            "无法启用 WAL（当前 journal_mode = {mode}）"
+        )));
+    }
+    Ok(())
+}
+
+/// 建库、应用迁移、一次性设置 WAL（每次启动调用；迁移按版本增量执行）。
 pub fn initialize(path: &Path) -> AppResult<()> {
     // 先自检注册表：如果词表与代码不一致，产出的知识会带着非法谓语落库，
     // 事后无法自动修复。宁可此时启动失败。
     registry::self_check()?;
 
     let mut conn = open(path)?;
+    // 先切 WAL 再迁移：迁移本身也受益于 WAL 的读写不互斥。
+    enable_wal(&conn)?;
     apply_migrations(&mut conn)?;
     Ok(())
 }
@@ -407,5 +426,81 @@ pub(crate) mod tests {
             string_list_col(row, 0)
         });
         assert!(result.is_err(), "损坏的 JSON 必须报错而不是返回空集");
+    }
+}
+
+#[cfg(test)]
+mod wal_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// 自包含的临时库路径（`mod tests` 里的同类 helper 是兄弟模块私有项）。
+    fn temp_path(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join("wiki-ya-wal-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(format!("{tag}-{}.db", uuid::Uuid::new_v4()))
+    }
+
+    fn cleanup(path: &Path) {
+        for suffix in ["", "-wal", "-shm"] {
+            let mut p = path.to_path_buf();
+            if !suffix.is_empty() {
+                p.set_extension(format!("db{suffix}"));
+            }
+            std::fs::remove_file(p).ok();
+        }
+    }
+
+    fn journal_mode(path: &Path) -> String {
+        let conn = open(path).unwrap();
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        mode
+    }
+
+    /// PERF-03：WAL 只需在 initialize 设一次——它持久化在库文件头里，
+    /// 之后任何连接都自动继承。这正是把它从 `open()` 移出的依据。
+    #[test]
+    fn wal_is_persisted_and_inherited_by_later_connections() {
+        let path = temp_path("init");
+        initialize(&path).expect("初始化应成功");
+
+        assert_eq!(
+            journal_mode(&path).to_lowercase(),
+            "wal",
+            "initialize 之后应为 WAL"
+        );
+
+        // 关键：这条连接**没有**再发 journal_mode PRAGMA（open() 已不再设置），
+        // 但它依然运行在 WAL 模式——证明该设置是数据库级持久的。
+        assert_eq!(
+            journal_mode(&path).to_lowercase(),
+            "wal",
+            "后续连接应自动继承 WAL，无需重发 PRAGMA"
+        );
+
+        // 重开一次初始化也不应有任何问题（幂等）。
+        initialize(&path).expect("重复初始化应幂等");
+        assert_eq!(journal_mode(&path).to_lowercase(), "wal");
+
+        cleanup(&path);
+    }
+
+    /// 连接级 PRAGMA 仍然每次生效（它们确实是连接级的）。
+    #[test]
+    fn connection_level_pragmas_still_apply() {
+        let path = temp_path("conn");
+        initialize(&path).unwrap();
+        let conn = open(&path).unwrap();
+        let fk: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        let busy: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(fk, 1, "外键约束必须在每条连接上开启");
+        assert_eq!(busy, 5000, "busy_timeout 必须是连接级设置");
+        cleanup(&path);
     }
 }
