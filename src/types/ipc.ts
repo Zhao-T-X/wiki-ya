@@ -698,6 +698,23 @@ export interface CandidateDto {
   createdAt: string;
 }
 
+/** 候选列表的游标分页入参（PERF-04）。 */
+export interface ListCandidatesInput {
+  /** 产生该候选的 extraction run id */
+  id: string;
+  /** 单页条数；缺省 50 */
+  limit?: number;
+  /** 不透明游标；缺省表示从头开始 */
+  cursor?: string;
+}
+
+/** 候选列表的一页（PERF-04）。 */
+export interface CandidatePageDto {
+  items: CandidateDto[];
+  /** 还有更多时给出下一页游标；undefined 表示已到末页 */
+  nextCursor?: string;
+}
+
 /** Claim 溯源：证据节点（M8）。 */
 export interface EvidenceNodeDto {
   evidenceId: string;

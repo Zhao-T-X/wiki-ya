@@ -859,6 +859,30 @@ pub struct CandidateDto {
     pub created_at: String,
 }
 
+/// 候选列表的游标分页入参（PERF-04）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListCandidatesInput {
+    /// 产生该候选的 extraction run id。
+    pub id: String,
+    /// 单页条数；缺省 50（服务端 clamp 到 1..=500）。
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// 不透明游标（`created_at|id`）；缺省表示从头开始。
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+/// 候选列表的一页（PERF-04）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidatePageDto {
+    pub items: Vec<CandidateDto>,
+    /// 还有更多时给出下一页游标；`None` 表示已到末页。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
 /// 用户决策一条候选（accept → 落库为 Claim + 演化分析；reject → 留痕）。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

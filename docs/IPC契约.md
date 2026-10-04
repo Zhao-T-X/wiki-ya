@@ -390,3 +390,40 @@ interface AskResponse {
 
 `src/types/ipc.ts` 必须与本文档逐字对应；`src/lib/api.ts` 只做 `invoke` + 错误包装，
 **不得**在 API 层做业务判断或字段改名。
+
+---
+
+## 1.6.1 候选审阅（M6 / PERF-04）
+
+```ts
+list_candidates(input: ListCandidatesInput): Promise<CandidatePageDto>
+
+interface ListCandidatesInput {
+  id: string;          // 产生该候选的 extraction run id
+  limit?: number;      // 单页条数；缺省 50，服务端 clamp 到 1..=500
+  cursor?: string;     // 不透明游标（`created_at|id`）；缺省表示从头开始
+}
+
+interface CandidatePageDto {
+  items: CandidateDto[];
+  nextCursor?: string; // 还有更多时给出；undefined 表示已到末页
+}
+
+decide_candidate(input: DecideCandidateInput): Promise<CandidateDto>
+
+interface DecideCandidateInput {
+  candidateId: string;
+  accept: boolean;
+  reason?: string | null;   // reject 时留痕
+}
+```
+
+- **游标分页（PERF-04）**：候选数随抽取增长，故不一次性返回全量。
+  `nextCursor` 为 `undefined` 即末页；前端在用户点击「加载更多」时才拉下一页。
+  游标对前端**不透明**，不得解析或拼接。
+- `decide_candidate` **只能由人类发起**：不经 Agent / Skill 任何路径（M5 闸门）。
+  `accept` → 落库为 Claim 并触发演化分析；`reject` → 标记 `rejected` + 原因，
+  **留痕不删除**（Trace 可回答「为什么这条没进知识库」）。
+- `CandidateDto.supportLevel`（`directly` / `partially` / `unsupported`）为
+  **本地校验**结果（`quote` 是否逐字落在来源切片原文内，不经 LLM）：
+  只有 `directly` 视为完全锚定、可进正常 Review；其余需人工补证据。

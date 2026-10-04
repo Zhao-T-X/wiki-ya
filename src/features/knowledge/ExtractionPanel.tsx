@@ -49,13 +49,32 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<WikiError | null>(null);
   const [deciding, setDeciding] = useState<string[]>([]);
+  // PERF-04：候选游标分页——`null` 表示已到末页。
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   // PR-03：默认只把"已直接锚定原文(directly)"的候选放进正常 Review 流；
   // partially/unsupported 需人工补证据后才可接受（可一键展开查看）。
   const [groundedOnly, setGroundedOnly] = useState(true);
 
   const refreshCandidates = useCallback((id: string) => {
-    list_candidates({ id }).then(setCandidates).catch(() => {});
+    // PERF-04：游标分页——首屏只取一页，避免一次渲染全部候选。
+    list_candidates({ id })
+      .then((page) => {
+        setCandidates(page.items);
+        setNextCursor(page.nextCursor ?? null);
+      })
+      .catch(() => {});
   }, []);
+
+  /** 追加下一页（PERF-04）：追加而非替换，用户点「加载更多」才拉。 */
+  const loadMoreCandidates = useCallback(() => {
+    if (!runId || !nextCursor) return;
+    list_candidates({ id: runId, cursor: nextCursor })
+      .then((page) => {
+        setCandidates((prev) => [...prev, ...page.items]);
+        setNextCursor(page.nextCursor ?? null);
+      })
+      .catch(() => {});
+  }, [runId, nextCursor]);
 
   const applyRun = useCallback(
     (next: ExtractionRunDto) => {
@@ -162,6 +181,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
     setStarting(true);
     setError(null);
     setCandidates([]);
+    setNextCursor(null);
     try {
       const id = await start_extraction({ id: documentId });
       setRunId(id);
@@ -425,6 +445,15 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
               </Card>
             );
           })}
+
+          {/* PERF-04：还有下一页时才出现「加载更多」——首屏恒为 50 条。 */}
+          {nextCursor ? (
+            <div className="flex justify-center pt-1">
+              <Button size="sm" variant="ghost" onClick={loadMoreCandidates}>
+                加载更多候选
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

@@ -40,7 +40,7 @@
 
 ---
 
-## PERF-01 Retrieval / Embedding Cache  P0
+## PERF-01 Retrieval / Embedding Cache  P0  ✅ 已完成
 
 **一句话**：语义检索只向量化「当前模型下还没有向量」的 chunk，且必须分批。
 
@@ -92,7 +92,7 @@ for n in [1_000, 10_000, 50_000]:
 
 ---
 
-## PERF-02 Vector Top-K 检索  P0
+## PERF-02 Vector Top-K 检索  P0  ✅ 已完成
 
 **一句话**：有界堆只留 top-K，且分两阶段取正文。
 
@@ -177,31 +177,49 @@ PRAGMA busy_timeout = 5000;
 
 ---
 
-## PERF-04 索引与查询  P1
+## PERF-04 索引与查询  P1  ✅ 已完成
 
 **一句话**：按真实查询补索引；候选列表改游标分页。
 
-### SQL（迁移 `0013_perf_indexes.sql`，`SCHEMA_VERSION → 13`）
+### SQL（迁移 `0013_perf_indexes.sql`，`SCHEMA_VERSION → 13`）—— 已执行
+
 ```sql
--- P0：Claim 溯源按 accepted_claim_id 反查 Candidate（当前无索引）
+-- ① 服务 trace_service::get_claim_trace：
+--    WHERE accepted_claim_id = ?1 ORDER BY created_at DESC LIMIT 1
+--    该列此前**完全没有索引**——「Claim 溯源」用得越久越慢的根因。
 CREATE INDEX IF NOT EXISTS idx_candidates_accepted_claim
   ON candidates(accepted_claim_id);
--- Review / Inbox 常按「文档 + 状态 + 时间」取件
-CREATE INDEX IF NOT EXISTS idx_candidates_document_status
-  ON candidates(document_id, status, created_at DESC);
--- Run 树（Agent → Skill → Tool）按父 Run 取子节点
-CREATE INDEX IF NOT EXISTS idx_runs_parent
-  ON runs(parent_run_id, started_at);
--- Review 按目标取件
-CREATE INDEX IF NOT EXISTS idx_reviews_target
-  ON reviews(target_type, target_id);
--- 证据「主证据」复合索引（窗口函数路径，P2 优化）
-CREATE INDEX IF NOT EXISTS idx_evidence_claim_level_created
-  ON evidence(claim_id, evidence_level, created_at);
--- 候选游标分页配套
+
+-- ② 服务候选游标分页：
+--    WHERE run_id = ?1 AND (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT ?
+--    同时是 idx_candidates_run 的严格前缀超集，故 DROP 旧索引。
 CREATE INDEX IF NOT EXISTS idx_candidates_run_cursor
   ON candidates(run_id, created_at, id);
+
+-- ③ 服务 claim_repository::CLAIM_SELECT 挑「主证据」的窗口函数：
+--    ROW_NUMBER() OVER (PARTITION BY claim_id ORDER BY evidence_level, created_at)
+--    让 SQLite 沿索引序走，免掉全表 evidence 的临时排序。
+--    同时是 idx_evidence_claim 的前缀超集，故 DROP 旧索引。
+CREATE INDEX IF NOT EXISTS idx_evidence_claim_level_created
+  ON evidence(claim_id, evidence_level, created_at);
+
+DROP INDEX IF EXISTS idx_candidates_run;
+DROP INDEX IF EXISTS idx_evidence_claim;
 ```
+
+### 推迟的索引（审计建议但**当前无查询支撑**）
+
+审计列了 5 条，实际核查后只有 3 条值得现在建。剩下两条是**投机性索引**——
+加了只白付写入成本与库体积，等真有对应查询时再补：
+
+| 推迟的索引 | 核查结果 | 何时该补 |
+| --- | --- | --- |
+| `candidates(document_id, status, created_at DESC)` | `candidates` 现有查询只有 `WHERE run_id` / `WHERE id` / `WHERE accepted_claim_id`，**没有**按 document+status 的 | 出现「按文档筛候选」的 Review/Inbox 需求时 |
+| `runs(parent_run_id, started_at)` | 全代码库**零**处 `WHERE parent_run_id = ?`（已 grep 确认） | 真正实现 Run 树（Agent → Skill → Tool）下钻时 |
+| `reviews(target_type, target_id)` | `review_repository` 只按 `status` / `id` 查询 | 出现「按目标取 Review」的需求时 |
+
+> 纪律：**索引必须有对应查询才建**。每个索引都是持续的写入放大，
+> 「以防将来会用」不是理由。
 
 ### 修改文件
 - 新增 `src-tauri/migrations/0013_perf_indexes.sql` + `db.rs`（`MIGRATION_0013`、`SCHEMA_VERSION`）

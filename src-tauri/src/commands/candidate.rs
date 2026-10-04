@@ -3,18 +3,18 @@
 use tauri::State;
 
 use crate::application::candidate_service;
-use crate::application::dto::{CandidateDto, DecideCandidateInput, IdInput};
+use crate::application::dto::{CandidateDto, CandidatePageDto, DecideCandidateInput, ListCandidatesInput};
 use crate::error::AppError;
 use crate::AppState;
 
-/// 按 Run 列出候选（产生顺序）。
+/// 按 Run **分页**列出候选（PERF-04：游标分页，首屏只 50 条）。
 #[tauri::command]
 pub fn list_candidates(
     state: State<'_, AppState>,
-    input: IdInput,
-) -> Result<Vec<CandidateDto>, AppError> {
+    input: ListCandidatesInput,
+) -> Result<CandidatePageDto, AppError> {
     let conn = state.open()?;
-    candidate_service::list_by_run(&conn, &input.id)
+    candidate_service::list_page(&conn, &input)
 }
 
 /// 用户决策一条候选：accept → 落库为 Claim + 演化分析；reject → 留痕。

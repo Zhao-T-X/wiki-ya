@@ -11,13 +11,17 @@
 
 use rusqlite::Connection;
 
-use crate::application::dto::{CandidateDto, ClaimCard, CreateClaimInput, DecideCandidateInput};
+use crate::application::dto::{
+    CandidateDto, CandidatePageDto, ClaimCard, CreateClaimInput, DecideCandidateInput,
+    ListCandidatesInput,
+};
 use crate::application::evolution_service;
 use crate::application::knowledge_service;
 use crate::domain::common::ids::DocumentId;
 use crate::domain::knowledge::candidate::{Candidate, CandidateStatus};
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::candidate_repository;
+use crate::infrastructure::candidate_repository::CandidateCursor;
 
 /// 按 Run 列出候选（产生顺序）。
 pub fn list_by_run(conn: &Connection, run_id: &str) -> AppResult<Vec<CandidateDto>> {
@@ -25,6 +29,43 @@ pub fn list_by_run(conn: &Connection, run_id: &str) -> AppResult<Vec<CandidateDt
         .iter()
         .map(to_dto)
         .collect())
+}
+
+/// 候选列表的默认单页条数（PERF-04）。
+///
+/// 取 50：够一屏审阅，又不会让前端一次渲染几百张卡片（那正是之前卡顿的来源之一）。
+const DEFAULT_PAGE_SIZE: usize = 50;
+
+/// 按 Run **分页**列出候选（PERF-04：游标分页）。
+///
+/// 相比一次性 `list_by_run` 的好处：
+/// - 首屏只传 50 条，载荷与渲染量都与候选总数**无关**；
+/// - 游标（而非 OFFSET）保证翻页代价恒定，且并发插入不漏行/不重复。
+pub fn list_page(
+    conn: &Connection,
+    input: &ListCandidatesInput,
+) -> AppResult<CandidatePageDto> {
+    let limit = input.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, 500);
+    let cursor = input.cursor.as_deref().and_then(CandidateCursor::parse);
+
+    // 多取一条判断"还有更多"，避免额外发一次 COUNT。
+    let fetched =
+        candidate_repository::list_by_run_page(conn, &input.id, cursor.as_ref(), limit + 1)?;
+    let has_more = fetched.len() > limit;
+    let items: Vec<CandidateDto> = fetched.iter().take(limit).map(to_dto).collect();
+    let next_cursor = if has_more {
+        items
+            .last()
+            .map(|last| CandidateCursor {
+                created_at: last.created_at.clone(),
+                id: last.id.clone(),
+            })
+            .map(|c| c.encode())
+    } else {
+        None
+    };
+
+    Ok(CandidatePageDto { items, next_cursor })
 }
 
 /// 用户决策一条候选。

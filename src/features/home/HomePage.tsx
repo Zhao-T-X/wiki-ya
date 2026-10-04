@@ -150,7 +150,10 @@ export function HomePage() {
     (next: ExtractionRunDto) => {
       setHomeRun(next);
       if (next.status === 'completed' && next.resultJson) {
-        list_candidates({ id: next.id }).then(setHomeCandidates).catch(() => {});
+        // PERF-04：游标分页——首页只展示首页那批候选。
+        list_candidates({ id: next.id })
+          .then((page) => setHomeCandidates(page.items))
+          .catch(() => {});
       }
       if (isTerminal(next.status)) {
         runs.reload();

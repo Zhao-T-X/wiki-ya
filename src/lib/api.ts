@@ -27,6 +27,8 @@ import type {
   EvidenceCard,
   ExtractionRunDto,
   CandidateDto,
+  CandidatePageDto,
+  ListCandidatesInput,
   ClaimTraceDto,
   RunTraceDto,
   AgentProfile,
@@ -320,9 +322,9 @@ export function run_agent_profile(input: {
   return call<string>('run_agent_profile', input);
 }
 
-/** 按 Run 列出候选（M6）。 */
-export function list_candidates(input: { id: string }): Promise<CandidateDto[]> {
-  return call<CandidateDto[]>('list_candidates', input);
+/** 按 Run 分页列出候选（M6；PERF-04：游标分页，首屏只 50 条）。 */
+export function list_candidates(input: ListCandidatesInput): Promise<CandidatePageDto> {
+  return call<CandidatePageDto>('list_candidates', input);
 }
 
 /** 决策一条候选：accept → 落库为 Claim + 演化分析；reject → 留痕。 */
