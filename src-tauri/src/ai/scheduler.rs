@@ -68,31 +68,44 @@ pub async fn extraction_in_flight() -> usize {
 mod tests {
     use super::*;
 
+    /// 闸门是**进程级全局**状态，因此相关断言必须放在同一个测试里顺序执行——
+    /// 拆成多个 `#[tokio::test]` 会在并行运行时互相抢占许可而随机失败。
     #[tokio::test]
-    async fn extraction_gate_limits_concurrency() {
-        // 连取 3 个许可，第 3 个必须拿不到（上限 2）。
+    async fn extraction_gate_limits_then_releases() {
+        // 上限内：可同时取到 EXTRACTION_CAPACITY 个许可。
         let a = acquire_extraction().await;
         let b = acquire_extraction().await;
-        assert!(a.is_some() && b.is_some(), "前两个应拿到许可");
+        assert!(a.is_some() && b.is_some(), "上限内应拿到许可");
         assert_eq!(extraction_in_flight().await, EXTRACTION_CAPACITY);
 
-        // 第三个不应立刻拿到——用 timeout 证明它在排队而不是被拒。
-        let third = tokio::time::timeout(std::time::Duration::from_millis(50), acquire_extraction()).await;
-        assert!(third.is_err(), "超过上限时第三个应处于排队等待，而不是立即失败");
-
-        drop(a);
-        drop(b);
-    }
-
-    #[tokio::test]
-    async fn released_permit_becomes_available() {
-        let first = acquire_extraction().await;
-        assert!(first.is_some());
-        let waited = tokio::time::timeout(
-            std::time::Duration::from_millis(200),
+        // 超出上限：应处于**排队等待**（而不是立即失败）。
+        let overflow = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
             acquire_extraction(),
         )
         .await;
-        assert!(waited.is_ok(), "释放后应能拿到许可");
+        assert!(overflow.is_err(), "超过上限时第三个应排队等待");
+
+        // 释放一个后，另一个应立刻拿到。
+        drop(a);
+        let got = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            acquire_extraction(),
+        )
+        .await;
+        assert!(got.is_ok(), "释放后应能拿到许可");
+
+        drop(b);
+        drop(got.ok().flatten());
+    }
+
+    /// Skill 闸门独立于抽取闸门（各自限流，互不占用）。
+    #[tokio::test]
+    async fn skill_gate_is_independent_from_extraction() {
+        let _s = acquire_skill().await;
+        assert!(_s.is_some());
+        // 取 skill 许可不应影响抽取闸门的可用数
+        let e = acquire_extraction().await;
+        assert!(e.is_some(), "skill 闸门不应占用抽取名额");
     }
 }

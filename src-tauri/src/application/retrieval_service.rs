@@ -10,6 +10,7 @@ use crate::ai::accounting::TokenUsage;
 use crate::ai::config::AiConfig;
 use crate::ai::context::ContextKind;
 use crate::ai::provider;
+use crate::ai::segmentation::{split_for_embedding, Segment};
 use crate::application::dto::{SearchInput, SearchResponse};
 use crate::application::search_service;
 use crate::error::AppResult;
@@ -24,6 +25,11 @@ pub struct RetrievedPassage {
     pub content: String,
     pub score: f32,
     pub source_id: Option<String>,
+    /// PERF-07：命中的是该 chunk 的第几段（0 = 未切分）。
+    /// `content` 只包含**这一段**——不得拿整个 chunk 冒充证据。
+    pub part: usize,
+    /// 该段在 chunk 原文中的字符区间（未切分时为 None）。
+    pub char_span: Option<(usize, usize)>,
 }
 
 /// 混合检索入口（稳定契约：只返回片段，不暴露用量）。
@@ -110,20 +116,36 @@ pub fn semantic_search_with_usage(
         // 分批向量化：单次请求过大既会超 API 上下文，也会撞速率限制。
         // 逐批入库（chunk_id 主键幂等），中途失败时已写入的批次仍然有效。
         for batch in batch_for_embedding(&missing) {
-            let texts: Vec<String> = batch.iter().map(|(_, c)| c.clone()).collect();
+            // PERF-07（方案 A）：逐 chunk 按模型上下文切段，每段各出一个向量。
+            // 短 chunk 只切一段，行为与改造前完全等价。
+            let mut jobs: Vec<(String, usize, Segment)> = Vec::new();
+            for (chunk_id, content) in batch.iter() {
+                for (part, seg) in split_for_embedding(content, EMBED_CONTEXT_TOKENS, EMBED_OVERLAP_TOKENS)
+                    .into_iter()
+                    .enumerate()
+                {
+                    jobs.push((chunk_id.clone(), part, seg));
+                }
+            }
+            if jobs.is_empty() {
+                continue;
+            }
+            let texts: Vec<String> = jobs.iter().map(|(_, _, s)| s.text.clone()).collect();
             let embedded = provider.embed(&texts)?;
             usage.embedding_tokens += embedded.prompt_tokens as u64;
-            if embedded.vectors.len() != batch.len() {
+            if embedded.vectors.len() != texts.len() {
                 // 诚实降级：返回数量与请求不符说明端点不可信，宁可不用语义结果，
                 // 也绝不写出错位/错误的向量。
                 return Ok(Vec::new());
             }
-            for ((chunk_id, _), vector) in batch.iter().zip(embedded.vectors.iter()) {
+            for ((chunk_id, part, seg), vector) in jobs.iter().zip(embedded.vectors.iter()) {
                 embedding_repository::store_embedding(
                     conn,
                     chunk_id,
-                    vector,
                     &config.embedding_model,
+                    vector,
+                    *part,
+                    Some(seg),
                 )?;
             }
         }
@@ -149,6 +171,16 @@ pub fn semantic_search_with_usage(
         Err(_) => Ok((Vec::new(), TokenUsage::default())),
     }
 }
+
+/// 嵌入模型的上下文上限（PERF-07）。
+///
+/// 默认按 `bge-small-zh-v1.5` 的 512 token 取 510（留 2 给 [CLS]/[SEP]）。
+/// 换模型时**必须**同步改这里——否则超限内容会被静默截断（这正是本方案要消灭的）。
+/// 接入本地运行时后，应改为从模型元数据读取。
+const EMBED_CONTEXT_TOKENS: usize = 510;
+
+/// 相邻段的重叠 token，避免句子被拦腰截断。
+const EMBED_OVERLAP_TOKENS: usize = 64;
 
 /// 向量化批次上限：条数 + 字符双预算（PERF-01）。
 const EMBED_BATCH_ITEMS: usize = 64;
@@ -235,6 +267,8 @@ pub fn map_hits(response: SearchResponse) -> Vec<RetrievedPassage> {
                 content: hit.snippet,
                 score: hit.score,
                 source_id,
+                part: 0,
+                char_span: None,
             })
         })
         .collect()

@@ -10,11 +10,12 @@
 //! - 所有函数失败都通过 `AppResult` 上抛；调用方（semantic_search）决定如何降级。
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::ai::context::ContextKind;
+use crate::ai::segmentation::Segment;
 use crate::application::retrieval_service::RetrievedPassage;
 use crate::error::AppResult;
 
@@ -31,28 +32,41 @@ fn deserialize_embedding(bytes: &[u8]) -> Vec<f32> {
         .collect()
 }
 
-/// 存储（或覆盖）单个 chunk 的 embedding。
+/// 存储（或覆盖）单个 chunk **某一段**的 embedding（PERF-07）。
 ///
-/// `chunk_id` 是 PRIMARY KEY，**每个 chunk 只有一行向量**：重复写入即覆盖，
-/// 包括 `model` 字段。因此切换 embedding 模型后，全库行都会显示为旧模型，
-/// [`chunks_missing_embedding`] 会把它们全部列为待重算——这正是期望语义。
+/// 主键是 `(chunk_id, model, part)`：
+/// - `part = 0` 且 `segment = None` → 短 chunk 未切分，与改造前完全等价；
+/// - `part > 0` → 超上下文窗口的长 chunk 切段，每段一行向量。
+/// - **多模型共存**：同一 chunk 可同时持有不同模型的向量，切换模型不再全库重算。
+///
+/// `segment_text` 存**实际送去嵌入的那段原文**：检索返回的证据只能是它。
+/// 若向量只比较了前半段却展示整块，就是虚报证据范围。
 pub fn store_embedding(
     conn: &Connection,
     chunk_id: &str,
-    embedding: &[f32],
     model: &str,
+    embedding: &[f32],
+    part: usize,
+    segment: Option<&Segment>,
 ) -> AppResult<()> {
     let blob = serialize_embedding(embedding);
     let dimensions = embedding.len() as i64;
+    let (text, start, end) = match segment {
+        Some(s) => (Some(s.text.clone()), Some(s.char_start as i64), Some(s.char_end as i64)),
+        None => (None, None, None),
+    };
     conn.execute(
-        "INSERT INTO chunk_embeddings (chunk_id, embedding, dimensions, model, created_at)
-         VALUES (?1, ?2, ?3, ?4, datetime('now'))
-         ON CONFLICT(chunk_id) DO UPDATE SET
+        "INSERT INTO chunk_embeddings
+           (chunk_id, model, part, embedding, dimensions, segment_text, char_start, char_end, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
+         ON CONFLICT(chunk_id, model, part) DO UPDATE SET
            embedding = excluded.embedding,
            dimensions = excluded.dimensions,
-           model = excluded.model,
+           segment_text = excluded.segment_text,
+           char_start = excluded.char_start,
+           char_end = excluded.char_end,
            created_at = datetime('now')",
-        params![chunk_id, blob, dimensions, model],
+        params![chunk_id, model, part as i64, blob, dimensions, text, start, end],
     )?;
     Ok(())
 }
@@ -147,6 +161,16 @@ impl Ord for Score {
     }
 }
 
+/// 某个 chunk 命中后的分段信息（PERF-07）。
+#[derive(Debug, Clone)]
+struct Hit {
+    score: f32,
+    part: usize,
+    /// 该段实际参与嵌入的文本；`None` 表示未切分（整块参与）。
+    segment_text: Option<String>,
+    char_span: Option<(usize, usize)>,
+}
+
 /// 单次取正文的 id 上限：SQLite 绑定变量上限 999，留余量。
 const ID_BATCH: usize = 900;
 
@@ -172,20 +196,48 @@ pub fn nearest_chunks(
         return Ok(Vec::new());
     }
 
-    // ---- 阶段一：扫向量，用有界小顶堆保留 top_k ----
-    let mut stmt =
-        conn.prepare("SELECT chunk_id, embedding FROM chunk_embeddings WHERE model = ?1")?;
+    // ---- 阶段一：扫向量，用有界小顶堆保留候选 ----
+    // 过量取（top_k * OVERFETCH）：长 chunk 的多段可能挤占名额，去重后仍要凑够 top_k。
+    const OVERFETCH: usize = 3;
+    let want = top_k.saturating_mul(OVERFETCH).max(top_k);
+
+    let mut stmt = conn.prepare(
+        "SELECT chunk_id, part, embedding, segment_text, char_start, char_end
+         FROM chunk_embeddings WHERE model = ?1",
+    )?;
     let rows = stmt.query_map(params![model], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<i64>>(4)?,
+            row.get::<_, Option<i64>>(5)?,
+        ))
     })?;
 
-    // 小顶堆：堆顶是当前 top_k 里最弱的一条，新条目更强就替换它。
-    let mut heap: BinaryHeap<Reverse<(Score, String)>> = BinaryHeap::with_capacity(top_k + 1);
+    // 小顶堆：堆顶是当前候选里最弱的一条，新条目更强就替换它。
+    let mut heap: BinaryHeap<Reverse<(Score, String)>> = BinaryHeap::with_capacity(want + 1);
+    // 同一 chunk 的多段只保留分数最高的那段（否则长块会霸占结果）。
+    let mut best: HashMap<String, Hit> = HashMap::new();
     for row in rows {
-        let (chunk_id, blob) = row?;
+        let (chunk_id, part, blob, segment_text, char_start, char_end) = row?;
         let score = cosine_similarity(query_vec, &deserialize_embedding(&blob));
+        let hit = Hit {
+            score,
+            part: part.max(0) as usize,
+            segment_text,
+            char_span: match (char_start, char_end) {
+                (Some(a), Some(b)) if a >= 0 && b >= 0 => Some((a as usize, b as usize)),
+                _ => None,
+            },
+        };
+        if best.get(&chunk_id).map(|p| hit.score <= p.score).unwrap_or(false) {
+            continue;
+        }
+        best.insert(chunk_id.clone(), hit);
         heap.push(Reverse((Score(score), chunk_id)));
-        if heap.len() > top_k {
+        if heap.len() > want {
             heap.pop();
         }
     }
@@ -197,36 +249,58 @@ pub fn nearest_chunks(
     // 堆本身无序，按分数降序输出，保证调用方看到的结果稳定可预期。
     picked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    // ---- 阶段二：只对 top_k 取正文（分批以规避绑定变量上限）----
-    let mut contents: HashMap<String, String> = HashMap::with_capacity(picked.len());
-    for group in picked.chunks(ID_BATCH) {
+    // ---- 阶段二：段文本已在手；未切分的段才回查整块正文 ----
+    let need_body: Vec<&String> = picked
+        .iter()
+        .filter(|(_, id)| best.get(id).map(|h| h.segment_text.is_none()).unwrap_or(true))
+        .map(|(_, id)| id)
+        .collect();
+    let mut bodies: HashMap<String, String> = HashMap::new();
+    for group in need_body.chunks(ID_BATCH) {
+        if group.is_empty() {
+            continue;
+        }
         let placeholders = vec!["?"; group.len()].join(",");
         let sql = format!("SELECT id, content FROM chunks WHERE id IN ({placeholders})");
         let mut stmt = conn.prepare(&sql)?;
-        let ids = group.iter().map(|(_, id)| id);
-        let mapped = stmt.query_map(rusqlite::params_from_iter(ids), |row| {
+        let mapped = stmt.query_map(rusqlite::params_from_iter(group.iter()), |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         for row in mapped {
             let (id, content) = row?;
-            contents.insert(id, content);
+            bodies.insert(id, content);
         }
     }
 
-    // 只保留在 chunks 中真实存在的条目（与旧 INNER JOIN 一致）。
-    Ok(picked
-        .into_iter()
-        .filter_map(|(score, id)| {
-            contents.get(&id).map(|content| RetrievedPassage {
-                kind: ContextKind::Chunk,
-                id,
-                title: "(chunk)".into(),
-                content: content.clone(),
-                score,
-                source_id: None,
-            })
-        })
-        .collect())
+    // 去重后截到 top_k；chunk 已不存在的条目跳过（旧 INNER JOIN 语义）。
+    let mut out: Vec<RetrievedPassage> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (score, id) in picked {
+        if out.len() >= top_k {
+            break;
+        }
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        let Some(hit) = best.get(&id) else { continue };
+        // 诚实性：只返回**真正参与嵌入**的那段文本，不拿整个 chunk 冒充证据。
+        let content = match (&hit.segment_text, bodies.get(&id)) {
+            (Some(seg), _) => seg.clone(),
+            (None, Some(full)) => full.clone(),
+            (None, None) => continue,
+        };
+        out.push(RetrievedPassage {
+            kind: ContextKind::Chunk,
+            id,
+            title: "(chunk)".into(),
+            content,
+            score,
+            source_id: None,
+            part: hit.part,
+            char_span: hit.char_span,
+        });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -257,7 +331,7 @@ mod tests {
         seed(&conn, "c1", "hello world");
 
         let emb = vec![1.0f32, 2.0, 3.0];
-        store_embedding(&conn, "c1", &emb, MODEL).unwrap();
+        store_embedding(&conn, "c1", MODEL, &emb, 0, None).unwrap();
 
         let loaded = load_embedding(&conn, "c1").unwrap().unwrap();
         assert_eq!(loaded, emb, "embedding 应原样往返");
@@ -288,7 +362,7 @@ mod tests {
         assert_eq!(all.len(), 3, "没有任何向量时应全部待算");
 
         // 算完 c1
-        store_embedding(&conn, "c1", &[1.0, 0.0], MODEL).unwrap();
+        store_embedding(&conn, "c1", MODEL, &[1.0, 0.0], 0, None).unwrap();
         let rest = chunks_missing_embedding(&conn, MODEL).unwrap();
         assert_eq!(rest.len(), 2, "已有向量的 c1 不应再出现");
         assert!(rest.iter().all(|(id, _)| id != "c1"));
@@ -303,7 +377,7 @@ mod tests {
     fn nearest_chunks_filters_by_model() {
         let conn = memory_db();
         seed(&conn, "c1", "alpha");
-        store_embedding(&conn, "c1", &[1.0, 0.0], MODEL).unwrap();
+        store_embedding(&conn, "c1", MODEL, &[1.0, 0.0], 0, None).unwrap();
 
         let other = nearest_chunks(&conn, "some-other-model", &[1.0, 0.0], 5).unwrap();
         assert!(other.is_empty(), "模型不匹配时不应返回任何条目");
@@ -324,7 +398,7 @@ mod tests {
             let id = format!("c{i:03}");
             seed(&conn, &id, "x");
             let v: Vec<f32> = (0..dim).map(|_| next()).collect();
-            store_embedding(&conn, &id, &v, MODEL).unwrap();
+            store_embedding(&conn, &id, MODEL, &v, 0, None).unwrap();
         }
         let q: Vec<f32> = (0..dim).map(|_| next()).collect();
 
@@ -360,5 +434,129 @@ mod tests {
     fn nearest_chunks_handles_zero_k() {
         let conn = memory_db();
         assert!(nearest_chunks(&conn, MODEL, &[1.0, 0.0], 0).unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod segment_tests {
+    use super::*;
+    use crate::ai::segmentation::split_for_embedding;
+    use crate::infrastructure::db;
+
+    const MODEL: &str = "bge-small-zh-v1.5";
+
+    fn setup() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        db::apply_migrations(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO documents(id,title,content,content_hash) VALUES ('d1','t','body','h1')",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn add_chunk(conn: &Connection, id: &str, content: &str) {
+        conn.execute(
+            "INSERT INTO chunks(id, document_id, chunk_index, start_offset, end_offset, content, char_count)
+             VALUES (?1,'d1',0,0,?2,?2,?2)",
+            params![id, content],
+        )
+        .unwrap();
+    }
+
+    /// 长 chunk 切成多段后，**每一段都要有向量**——否则尾部内容仍然搜不到。
+    #[test]
+    fn long_chunk_gets_one_vector_per_segment() {
+        let conn = setup();
+        let long = "知识契约与演化规范".repeat(200); // 2000+ 字，远超 510 token
+        add_chunk(&conn, "c1", &long);
+        let segs = split_for_embedding(&long, 510, 64);
+        assert!(segs.len() > 1, "长 chunk 应被切成多段");
+        for (part, seg) in segs.iter().enumerate() {
+            let v = vec![1.0f32, 0.0, 0.0];
+            store_embedding(&conn, "c1", MODEL, &v, part, Some(seg)).unwrap();
+        }
+        let rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunk_embeddings WHERE chunk_id='c1' AND model=?1",
+                params![MODEL],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows as usize, segs.len(), "每段都应各有一行向量");
+    }
+
+    /// 诚实性核心断言：命中的**长 chunk 只返回那一段的文本**，不返回整块。
+    #[test]
+    fn retrieval_returns_the_matched_segment_not_the_whole_chunk() {
+        let conn = setup();
+        let long = "甲".repeat(600); // 段0
+        let tail = "乙".repeat(600); // 段1
+        let full = format!("{long}{tail}");
+        add_chunk(&conn, "c1", &full);
+        let segs = split_for_embedding(&full, 510, 64);
+        assert!(segs.len() >= 2, "需要至少两段");
+
+        // 只给第 2 段打上与 query 完全一致的向量
+        let target = segs.len() - 1;
+        store_embedding(&conn, "c1", MODEL, &[1.0, 0.0, 0.0], target, Some(&segs[target])).unwrap();
+
+        let hits = nearest_chunks(&conn, MODEL, &[1.0, 0.0, 0.0], 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        let hit = &hits[0];
+        assert_eq!(hit.part, target, "应报告命中的是第几段");
+        assert_eq!(hit.content, segs[target].text, "内容必须**就是**参与嵌入的那一段");
+        assert!(
+            !hit.content.contains('甲'),
+            "未参与嵌入的前段内容不得出现在证据里（虚报证据范围）"
+        );
+    }
+
+    /// 多模型共存：同一 chunk 可同时持有不同模型的向量，切换不再全库重算。
+    #[test]
+    fn multiple_models_coexist_for_the_same_chunk() {
+        let conn = setup();
+        add_chunk(&conn, "c1", "短文本");
+        store_embedding(&conn, "c1", "model-a", &[1.0, 0.0], 0, None).unwrap();
+        store_embedding(&conn, "c1", "model-b", &[0.0, 1.0], 0, None).unwrap();
+        let a = nearest_chunks(&conn, "model-a", &[1.0, 0.0], 5).unwrap();
+        let b = nearest_chunks(&conn, "model-b", &[0.0, 1.0], 5).unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(b.len(), 1);
+        assert!((a[0].score - 1.0).abs() < 1e-6, "model-a 应命中自己");
+        assert!((b[0].score - 1.0).abs() < 1e-6, "model-b 应命中自己");
+    }
+
+    /// 同一 chunk 多段都接近命中时，只返回分数最高的那一段（不霸占结果）。
+    #[test]
+    fn multiple_segments_of_same_chunk_are_deduped() {
+        let conn = setup();
+        let full = "丙".repeat(1200);
+        add_chunk(&conn, "c1", &full);
+        let segs = split_for_embedding(&full, 510, 64);
+        assert!(segs.len() >= 2);
+        for (part, seg) in segs.iter().enumerate() {
+            // 第 0 段给最高分，其余给较低分
+            let v = if part == 0 { vec![1.0, 0.0] } else { vec![0.9, 0.1] };
+            store_embedding(&conn, "c1", MODEL, &v, part, Some(seg)).unwrap();
+        }
+        let hits = nearest_chunks(&conn, MODEL, &[1.0, 0.0], 5).unwrap();
+        let same: Vec<&str> = hits.iter().filter(|h| h.id == "c1").map(|h| h.id.as_str()).collect();
+        assert_eq!(same.len(), 1, "同一 chunk 只应出现一次");
+        assert_eq!(hits[0].part, 0, "应保留分数最高的第 0 段");
+    }
+
+    /// 短 chunk 行为与改造前完全等价（part=0、无 segment_text、回查整块）。
+    #[test]
+    fn short_chunk_behaves_exactly_as_before() {
+        let conn = setup();
+        add_chunk(&conn, "c1", "短文本");
+        store_embedding(&conn, "c1", MODEL, &[1.0, 0.0], 0, None).unwrap();
+        let hits = nearest_chunks(&conn, MODEL, &[1.0, 0.0], 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].part, 0);
+        assert_eq!(hits[0].char_span, None);
+        assert_eq!(hits[0].content, "短文本", "未切分时应返回整块正文");
     }
 }
