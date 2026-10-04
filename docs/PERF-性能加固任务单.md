@@ -320,11 +320,20 @@ extraction : 1~2     embedding : 1     ask : 2~4     agent/skill : 2
 
 ---
 
-## PERF-06 IPC 载荷与前端查询  P1
+## PERF-06 IPC 载荷与前端查询  P1  ✅ 已完成（首页聚合；候选分页已在 PERF-04）
 
 **一句话**：减少 IPC 次数与载荷；列表一律分页、剔除重字段。
 
-### 修改文件
+### 已交付（commit `4c682ed`）
+- 新增 `application/overview_service.rs` + `commands/overview.rs`：
+  `get_home_overview` 在**同一条连接**上取齐 appInfo / registries / documents /
+  pendingReview / recentRuns。
+- 前端 `HomePage` 由 5 个 `useAsyncData` 改为 1 个 `overview`，再按需派生；
+  各段条数上限沿用原值（文档 8 / 待审 5 / Run 10），任一段失败则整体失败。
+- `list_extraction_runs` 不下发 `result_json` 已在 PERF-04 落地；
+  `list_candidates` 分页已在 PERF-04 落地。
+
+### 修改文件（原始计划）
 - 新增聚合命令 `src-tauri/src/commands/overview.rs`
 - `src-tauri/src/lib.rs`（注册命令）
 - 前端 `src/lib/api.ts` + 各页面
