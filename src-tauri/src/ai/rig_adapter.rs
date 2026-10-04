@@ -102,25 +102,28 @@ impl RigAdapter {
         // 与自研 provider 相同的「流式专用端点」记忆（M14 热修复用）：
         // DeepSeek 推理端点等非流式恒为空体，只有流式才有正文。
         let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
+        // PERF-05：三条路径现在都能带回真实 usage（流式从终止记录读）。
         let (text, usage, retries) = if is_streaming_only(&stream_key) {
-            (self.stream_collect(&request).await?, None, 0)
+            let (text, usage) = self.stream_collect(&request).await?;
+            (text, usage, 0)
         } else {
             let (non_stream, usage) = self.complete_once_inner(&request).await?;
             if non_stream.trim().is_empty() {
                 crate::log_warn!("rig 非流式返回空文本，端点 {stream_key} 标记为流式专用并转流式");
                 mark_streaming_only(&stream_key);
-                // 回退流式：rig 流式不回传 usage，记一次重试、用量留 0（诚实）。
-                (self.stream_collect(&request).await?, None, 1)
+                // 回退流式：这一次算重试，但用量**照实记录**（rig 流式有 usage）。
+                let (text, stream_usage) = self.stream_collect(&request).await?;
+                (text, stream_usage, 1)
             } else {
-                (non_stream, Some(usage), 0)
+                (non_stream, usage, 0)
             }
         };
 
         Ok(AgentResult {
             answer: text,
             model: self.config.model.clone(),
-            input_tokens: usage.map(|u| u.input_tokens).unwrap_or(0),
-            output_tokens: usage.map(|u| u.output_tokens).unwrap_or(0),
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
             retries,
             steps: Vec::new(),
             rounds: 1,
@@ -145,8 +148,17 @@ impl RigAdapter {
         Ok((join_choice_text(response.choice), response.usage))
     }
 
-    /// 流式补全：逐帧收集文本（推理模型的 reasoning 帧被自然跳过）。
-    async fn stream_collect(&self, request: &AgentRequest) -> AppResult<String> {
+    /// 流式补全：逐帧收集文本（推理模型的 reasoning 帧被自然跳过），
+    /// 并返回该次调用的**真实 token 用量**。
+    ///
+    /// PERF-05 修正：rig 0.42 的流在终止记录（`StreamFinal`）里**确实带 usage**，
+    /// 并提供 `StreamingCompletionResponse::usage()`。此前这里只收文本、把 usage
+    /// 丢了，于是「非流式空体 → 回退流式」之后整条链路的 token 用量全是 0——
+    /// 表现为「chunk 一多就看不到 token 用量」。现在读完流后从流上读取。
+    async fn stream_collect(
+        &self,
+        request: &AgentRequest,
+    ) -> AppResult<(String, rig::completion::Usage)> {
         let client = self.completions_client()?;
         let model = openai::GenericCompletionModel::new(client, self.config.model.clone());
         let stream = model
@@ -169,7 +181,9 @@ impl RigAdapter {
                 Err(err) => return Err(AppError::Internal(format!("rig 流式中断：{err}"))),
             }
         }
-        Ok(text)
+        // 流已 drain 完，终止记录里的真实用量可读（缺失时 rig 返回零值哨兵）。
+        let usage = stream.as_ref().get_ref().usage();
+        Ok((text, usage))
     }
 }
 
