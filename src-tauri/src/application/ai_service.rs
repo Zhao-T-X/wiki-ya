@@ -164,15 +164,25 @@ pub fn batch_chunks(chunks: &[Chunk]) -> Vec<Vec<(usize, String)>> {
 }
 
 /// Provider 原始返回的 Claim（字段宽松，校验前先用它接住）。
+///
+/// **必须** `rename_all = "camelCase"`：提示词（[`extraction_system_prompt`]）
+/// 要求模型返回 `objectText` / `claimType` / `sourceChunk` 等 camelCase 字段，
+/// 而结构体字段是 snake_case。缺少这条 rename 时 serde 会因字段名不匹配而
+/// **静默丢弃**（`#[serde(default)]` 全部退化成 `None`）——实测导致
+/// `objectText` / `claimType` / `sourceChunk` 100% 丢失：候选没有宾语、
+/// grounding 全部判为 unsupported（UI 一条都审不了）。
+///
+/// 三个关键字段另加 snake_case 别名：换模型时若它按 snake_case 返回也不丢。
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RawClaim {
     subject: String,
     predicate: String,
-    #[serde(default)]
+    #[serde(default, alias = "object_text")]
     object_text: Option<String>,
     #[serde(default)]
     content: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "claim_type")]
     claim_type: Option<String>,
     #[serde(default)]
     polarity: Option<String>,
@@ -180,7 +190,7 @@ struct RawClaim {
     modality: Option<String>,
     #[serde(default)]
     confidence: Option<f32>,
-    #[serde(default)]
+    #[serde(default, alias = "source_chunk", alias = "sourceChunkIndex")]
     source_chunk: Option<usize>,
     #[serde(default)]
     sentence: Option<String>,
@@ -397,5 +407,75 @@ mod tests {
         assert_eq!(batches.len(), 2);
         assert_eq!(batches[0].len(), 1);
         assert_eq!(batches[1].len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod raw_claim_contract_tests {
+    use super::*;
+
+    /// PERF-05 回归：提示词要求 camelCase，解析器必须真的接住。
+    ///
+    /// 缺 `rename_all = "camelCase"` 时，serde 会静默丢弃 `objectText` /
+    /// `claimType` / `sourceChunk`（全部退化为 None）——这条测试就是防止它复发。
+    #[test]
+    fn camel_case_fields_are_parsed() {
+        let json = r#"{"claims":[{
+            "subject":"Rust",
+            "predicate":"enables",
+            "objectText":"安全并发",
+            "content":"Rust 通过所有权机制实现安全并发。",
+            "claimType":"causal",
+            "polarity":"positive",
+            "modality":"asserted",
+            "confidence":0.9,
+            "sourceChunk":3,
+            "sentence":"Rust 通过所有权机制实现安全并发。"
+        }]}"#;
+
+        let parsed = parse_and_validate_claims(json).expect("应解析成功");
+        assert_eq!(parsed.len(), 1);
+        let c = &parsed[0];
+        assert_eq!(c.subject, "Rust");
+        assert_eq!(
+            c.object_text.as_deref(),
+            Some("安全并发"),
+            "objectText 必须被接住（曾 100% 丢失 → 候选没有宾语）"
+        );
+        assert_eq!(c.claim_type.as_deref(), Some("causal"), "claimType 必须被接住");
+        assert_eq!(
+            c.source_chunk_index,
+            Some(3),
+            "sourceChunk 必须被接住（曾 100% 丢失 → grounding 恒为 unsupported）"
+        );
+        assert_eq!(c.polarity.as_deref(), Some("positive"));
+        assert_eq!(c.modality.as_deref(), Some("asserted"));
+        assert_eq!(c.confidence, Some(0.9));
+    }
+
+    /// 换模型时若按 snake_case 返回，也不该丢字段（别名为此存在）。
+    #[test]
+    fn snake_case_fields_are_still_accepted() {
+        let json = r#"{"claims":[{
+            "subject":"Rust",
+            "predicate":"enables",
+            "object_text":"安全并发",
+            "claim_type":"causal",
+            "source_chunk":7
+        }]}"#;
+        let parsed = parse_and_validate_claims(json).expect("应解析成功");
+        let c = &parsed[0];
+        assert_eq!(c.object_text.as_deref(), Some("安全并发"));
+        assert_eq!(c.claim_type.as_deref(), Some("causal"));
+        assert_eq!(c.source_chunk_index, Some(7));
+    }
+
+    /// 字段名对齐提示词契约：改提示词时这条会提醒同步改解析器。
+    #[test]
+    fn prompt_and_parser_agree_on_camel_case_names() {
+        let prompt = extraction_system_prompt();
+        for field in ["objectText", "claimType", "sourceChunk", "content", "sentence"] {
+            assert!(prompt.contains(field), "提示词应要求字段 {field}");
+        }
     }
 }

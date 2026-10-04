@@ -55,6 +55,21 @@ pub struct AgentResult {
     pub rounds: usize,
 }
 
+/// 非流式补全的尝试阶梯（PERF-05）：`(max_tokens, disable_thinking)`。
+///
+/// 与 `OpenAiProvider::complete` 同思路：推理型模型会把输出预算花在 reasoning
+/// 上，`content` 恒为空（`finish_reason=length`）。于是先原样、再提高预算、
+/// 最后关闭思考；整条阶梯都空才回退流式。
+///
+/// 此前 rig adapter 只有固定 `max_tokens = 8_192` 一档：chunk 一多（候选输出量大）
+/// 就必然空 content，于是每次都白付一次重试——实测某次 23 chunk 抽取
+/// `retries = 1`，成本直接翻倍（¥0.24 → ¥0.48）。
+const NON_STREAM_LADDER: [(u64, bool); 3] = [
+    (8_192, false),
+    (32_768, false),
+    (32_768, true),
+];
+
 /// Rig 实现的 Agent Runtime 适配器。
 pub struct RigAdapter {
     config: AiConfig,
@@ -102,20 +117,34 @@ impl RigAdapter {
         // 与自研 provider 相同的「流式专用端点」记忆（M14 热修复用）：
         // DeepSeek 推理端点等非流式恒为空体，只有流式才有正文。
         let stream_key = format!("{}|{}", self.config.base_url, self.config.model);
-        // PERF-05：三条路径现在都能带回真实 usage（流式从终止记录读）。
+        // PERF-05：三条路径都带回真实 usage（流式从终止记录读）。
         let (text, usage, retries) = if is_streaming_only(&stream_key) {
             let (text, usage) = self.stream_collect(&request).await?;
             (text, usage, 0)
         } else {
-            let (non_stream, usage) = self.complete_once_inner(&request).await?;
-            if non_stream.trim().is_empty() {
-                crate::log_warn!("rig 非流式返回空文本，端点 {stream_key} 标记为流式专用并转流式");
-                mark_streaming_only(&stream_key);
-                // 回退流式：这一次算重试，但用量**照实记录**（rig 流式有 usage）。
-                let (text, stream_usage) = self.stream_collect(&request).await?;
-                (text, stream_usage, 1)
-            } else {
-                (non_stream, usage, 0)
+            let mut resolved: Option<(String, rig::completion::Usage)> = None;
+            let mut attempts = 0u32;
+            for (budget, disable_thinking) in NON_STREAM_LADDER {
+                let (text, usage) =
+                    self.complete_once_inner(&request, budget, disable_thinking)
+                        .await?;
+                attempts += 1;
+                if !text.trim().is_empty() {
+                    resolved = Some((text, usage));
+                    break;
+                }
+                crate::log_warn!(
+                    "rig 非流式返回空 content（max_tokens={budget} disable_thinking={disable_thinking}），升级重试"
+                );
+            }
+            match resolved {
+                Some((text, usage)) => (text, usage, attempts - 1),
+                None => {
+                    crate::log_warn!("rig 非流式阶梯全部为空，标记流式专用并回退");
+                    mark_streaming_only(&stream_key);
+                    let (text, usage) = self.stream_collect(&request).await?;
+                    (text, usage, attempts)
+                }
             }
         };
 
@@ -134,14 +163,21 @@ impl RigAdapter {
     async fn complete_once_inner(
         &self,
         request: &AgentRequest,
+        max_tokens: u64,
+        disable_thinking: bool,
     ) -> AppResult<(String, rig::completion::Usage)> {
         let client = self.completions_client()?;
         let model = openai::GenericCompletionModel::new(client, self.config.model.clone());
-        let response = model
+        let mut builder = model
             .completion_request(request.goal.clone())
             .preamble(request.system.clone())
             .temperature(0.3)
-            .max_tokens(8_192)
+            .max_tokens(max_tokens);
+        if disable_thinking {
+            // 供应商特有字段，只在最后一档附带：严格端点遇到未知参数会直接 4xx。
+            builder = builder.additional_params(serde_json::json!({ "enable_thinking": false }));
+        }
+        let response = builder
             .send()
             .await
             .map_err(|err| AppError::Internal(format!("rig 补全失败：{err}")))?;
@@ -461,5 +497,33 @@ impl RigAdapter {
         Err(AppError::Internal(format!(
             "Agent 在 {MAX_ROUNDS} 轮内未给出最终答案"
         )))
+    }
+}
+
+#[cfg(test)]
+mod ladder_tests {
+    use super::*;
+
+    /// PERF-05：升级阶梯必须「先原样、再提高预算、最后关闭思考」。
+    ///
+    /// 顺序有意义：`enable_thinking` 是供应商特有字段，严格端点遇到未知参数会
+    /// 直接 4xx，所以只能放在最后一档兜底；提高预算放在中间档，因为推理模型
+    /// 常把预算花在 reasoning 上导致 content 为空。
+    #[test]
+    fn ladder_escalates_budget_before_disabling_thinking() {
+        assert_eq!(NON_STREAM_LADDER[0], (8_192, false), "第一档必须原样");
+        assert_eq!(
+            NON_STREAM_LADDER[1],
+            (32_768, false),
+            "第二档应提高预算但不动思考模式"
+        );
+        assert_eq!(
+            NON_STREAM_LADDER[2],
+            (32_768, true),
+            "关闭思考只能作为最后一档"
+        );
+        // 预算必须单调不减
+        assert!(NON_STREAM_LADDER[0].0 <= NON_STREAM_LADDER[1].0);
+        assert!(NON_STREAM_LADDER[1].0 <= NON_STREAM_LADDER[2].0);
     }
 }
