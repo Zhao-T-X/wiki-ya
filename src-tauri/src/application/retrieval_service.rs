@@ -102,22 +102,35 @@ pub fn semantic_search_with_usage(
         let config = AiConfig::from_settings(conn);
         let provider = provider::default_provider(conn);
 
-        // 取全部 chunk 文本（空库直接降级）。
-        let chunks = embedding_repository::all_chunk_texts(conn)?;
-        if chunks.is_empty() {
-            return Ok(Vec::new());
-        }
-        let texts: Vec<String> = chunks.iter().map(|(_, c)| c.clone()).collect();
+        // PERF-01：只向量化「当前模型下还没有向量」的 chunk。
+        // 稳态（无新增/变更 chunk）时这里返回空集 → 完全跳过 embedding，
+        // 每次 Ask 的向量化成本从 O(库规模) 降到 O(1)（仅 query 一条）。
+        let missing = embedding_repository::chunks_missing_embedding(conn, &config.embedding_model)?;
 
-        // 向量化全部 chunk，并覆盖写入（PRIMARY KEY 幂等）。
-        let embedded_chunks = provider.embed(&texts)?;
-        usage.embedding_tokens += embedded_chunks.prompt_tokens as u64;
-        let embeddings = embedded_chunks.vectors;
-        if embeddings.len() != chunks.len() {
-            return Ok(Vec::new());
+        // 分批向量化：单次请求过大既会超 API 上下文，也会撞速率限制。
+        // 逐批入库（chunk_id 主键幂等），中途失败时已写入的批次仍然有效。
+        for batch in batch_for_embedding(&missing) {
+            let texts: Vec<String> = batch.iter().map(|(_, c)| c.clone()).collect();
+            let embedded = provider.embed(&texts)?;
+            usage.embedding_tokens += embedded.prompt_tokens as u64;
+            if embedded.vectors.len() != batch.len() {
+                // 诚实降级：返回数量与请求不符说明端点不可信，宁可不用语义结果，
+                // 也绝不写出错位/错误的向量。
+                return Ok(Vec::new());
+            }
+            for ((chunk_id, _), vector) in batch.iter().zip(embedded.vectors.iter()) {
+                embedding_repository::store_embedding(
+                    conn,
+                    chunk_id,
+                    vector,
+                    &config.embedding_model,
+                )?;
+            }
         }
-        for (chunk, vec) in chunks.iter().zip(embeddings.iter()) {
-            embedding_repository::store_embedding(conn, &chunk.0, vec, &config.embedding_model)?;
+
+        // 空库直接降级：没有 chunk 可比，就不为 query 付一次 embedding 成本。
+        if !embedding_repository::has_chunks(conn)? {
+            return Ok(Vec::new());
         }
 
         // 向量化 query。
@@ -128,13 +141,39 @@ pub fn semantic_search_with_usage(
             _ => return Ok(Vec::new()),
         };
 
-        embedding_repository::nearest_chunks(conn, &query_vec, limit)
+        embedding_repository::nearest_chunks(conn, &config.embedding_model, &query_vec, limit)
     };
 
     match run() {
         Ok(passages) => Ok((passages, usage)),
         Err(_) => Ok((Vec::new(), TokenUsage::default())),
     }
+}
+
+/// 向量化批次上限：条数 + 字符双预算（PERF-01）。
+const EMBED_BATCH_ITEMS: usize = 64;
+const EMBED_BATCH_CHARS: usize = 60_000;
+
+/// 把待向量化条目按「条数 + 字符」双预算切批（与 `ai_service::batch_chunks` 同思路）。
+fn batch_for_embedding<'a>(items: &'a [(String, String)]) -> Vec<Vec<&'a (String, String)>> {
+    let mut out: Vec<Vec<&'a (String, String)>> = Vec::new();
+    let mut current: Vec<&'a (String, String)> = Vec::new();
+    let mut chars = 0usize;
+    for item in items {
+        let len = item.1.chars().count();
+        if !current.is_empty()
+            && (current.len() >= EMBED_BATCH_ITEMS || chars + len > EMBED_BATCH_CHARS)
+        {
+            out.push(std::mem::take(&mut current));
+            chars = 0;
+        }
+        current.push(item);
+        chars += len;
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
 }
 
 /// RRF（Reciprocal Rank Fusion）融合词法与语义结果（TDD §2119）。
@@ -199,4 +238,41 @@ pub fn map_hits(response: SearchResponse) -> Vec<RetrievedPassage> {
             })
         })
         .collect()
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn items(n: usize, len: usize) -> Vec<(String, String)> {
+        (0..n)
+            .map(|i| (format!("c{i:03}"), "x".repeat(len)))
+            .collect()
+    }
+
+    /// PERF-01：分批不得丢条目——丢了就等于静默漏算向量，检索会悄悄变差。
+    #[test]
+    fn batching_never_drops_items() {
+        for (n, len) in [(0usize, 10usize), (1, 10), (10, 10), (200, 10), (3, 50_000)] {
+            let input = items(n, len);
+            let batches = batch_for_embedding(&input);
+            let flattened: Vec<&(String, String)> = batches.iter().flatten().copied().collect();
+            assert_eq!(flattened.len(), n, "n={n} len={len} 时条目数必须守恒");
+            for (i, item) in flattened.iter().enumerate() {
+                assert_eq!(item.0, input[i].0, "顺序必须保持");
+            }
+        }
+    }
+
+    /// PERF-01：单批不得超过条数/字符预算。
+    #[test]
+    fn batching_respects_budgets() {
+        let input = items(200, 1_000);
+        for batch in batch_for_embedding(&input) {
+            assert!(batch.len() <= EMBED_BATCH_ITEMS, "条数超限");
+            let chars: usize = batch.iter().map(|(_, c)| c.chars().count()).sum();
+            assert!(chars <= EMBED_BATCH_CHARS, "字符预算超限：{chars}");
+        }
+        // 200 条 × 1000 字 = 20 万字符 → 至少切成 4 批
+        assert!(batch_for_embedding(&input).len() >= 4);
+    }
 }
