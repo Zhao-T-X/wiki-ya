@@ -45,4 +45,7 @@ pub struct RunRecord {
     pub error_code: Option<String>,
     pub error_message: Option<String>,
     pub metadata: String,
+    /// 本次 Run 的真实 token 账本（JSON 序列化的 `TokenUsage`，PR-07）。
+    /// 未发生模型调用或 provider 未上报时为 `None`。
+    pub usage_json: Option<String>,
 }

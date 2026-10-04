@@ -503,6 +503,10 @@ export interface RunTraceDto {
   metadata: unknown;
   agentSteps: AgentEventDto[];
   extractionRun?: ExtractionRunDto;
+  /** 本次 Run 的真实 token 账本（PR-07）；未记录时为 undefined */
+  usage?: TokenUsage;
+  /** 成本估算（美元）；模型未知时为 undefined */
+  costUsd?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -6,9 +6,10 @@
 
 use rusqlite::Connection;
 
+use crate::ai::accounting::TokenUsage;
 use crate::domain::extraction::ExtractionRunStatus;
 use crate::domain::run::{RunRecord, RunType};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::infrastructure::db::{now, parse_col};
 
 /// 登记一条新 Run（status = queued）。
@@ -63,6 +64,19 @@ pub fn set_metadata(conn: &Connection, id: &str, metadata: &str) -> AppResult<()
     Ok(())
 }
 
+/// 写入本次 Run 的真实 token 账本（PR-07）。
+///
+/// 只在确有 provider 用量时调用；序列化失败不阻断主流程（返回错误由调用方决定）。
+pub fn set_usage(conn: &Connection, id: &str, usage: &TokenUsage) -> AppResult<()> {
+    let json = serde_json::to_string(usage)
+        .map_err(|err| AppError::Internal(format!("token 用量序列化失败：{err}")))?;
+    conn.execute(
+        "UPDATE runs SET usage_json = ?2 WHERE id = ?1",
+        rusqlite::params![id, json],
+    )?;
+    Ok(())
+}
+
 /// 终态收口：status + finished_at + 错误信息一次写齐。
 pub fn finish(
     conn: &Connection,
@@ -84,7 +98,7 @@ pub fn finish(
 pub fn get(conn: &Connection, id: &str) -> AppResult<Option<RunRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, parent_run_id, run_type, actor, status, stage, started_at, finished_at, \
-         error_code, error_message, metadata FROM runs WHERE id = ?1",
+         error_code, error_message, metadata, usage_json FROM runs WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(rusqlite::params![id], map_run)?;
     match rows.next() {
@@ -109,7 +123,7 @@ pub fn mark_stale_interrupted(conn: &Connection) -> AppResult<usize> {
 pub fn list_recent(conn: &Connection, limit: usize) -> AppResult<Vec<RunRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, parent_run_id, run_type, actor, status, stage, started_at, finished_at, \
-         error_code, error_message, metadata FROM runs ORDER BY started_at DESC, id LIMIT ?1",
+         error_code, error_message, metadata, usage_json FROM runs ORDER BY started_at DESC, id LIMIT ?1",
     )?;
     let rows = stmt.query_map(rusqlite::params![limit as i64], map_run)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -128,6 +142,7 @@ fn map_run(r: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
         error_code: r.get(8)?,
         error_message: r.get(9)?,
         metadata: r.get(10)?,
+        usage_json: r.get(11)?,
     })
 }
 
@@ -168,6 +183,29 @@ mod tests {
         assert_eq!(run.status, ExtractionRunStatus::Completed);
         assert_eq!(run.stage, "extracting");
         assert!(run.finished_at.is_some());
+        // 未写入用量时诚实保持 None（Trace 显示「无用量记录」）。
+        assert!(run.usage_json.is_none());
+    }
+
+    /// PR-07：真实 token 账本写入后能原样读回。
+    #[test]
+    fn set_usage_round_trips() {
+        let conn = setup();
+        register(&conn, "r1", RunType::Agent, "KnowledgeAgent", None, "{}").unwrap();
+
+        let usage = TokenUsage {
+            input_tokens: 120,
+            output_tokens: 45,
+            embedding_tokens: 300,
+            retries: 1,
+        };
+        set_usage(&conn, "r1", &usage).unwrap();
+
+        let run = get(&conn, "r1").unwrap().unwrap();
+        let raw = run.usage_json.expect("usage_json 应已写入");
+        let parsed: TokenUsage = serde_json::from_str(&raw).expect("usage_json 应可反序列化");
+        assert_eq!(parsed, usage);
+        assert_eq!(parsed.total_tokens(), 465);
     }
 
     #[test]

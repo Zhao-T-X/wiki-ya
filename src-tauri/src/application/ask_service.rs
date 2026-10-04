@@ -20,7 +20,7 @@ use crate::application::retrieval_service::retrieve_with_usage;
 use crate::domain::ontology::registry;
 use crate::error::AppResult;
 use crate::events::{RunEvent, RunSink};
-use crate::infrastructure::{db, telemetry_repository};
+use crate::infrastructure::{db, run_repository, telemetry_repository};
 
 /// 进入编排前的检索候选上限。
 const RETRIEVE_LIMIT: usize = 15;
@@ -244,6 +244,8 @@ pub fn ask(
     );
     usage.add(&retrieval_usage);
     let cost_usd = usage.estimate_cost_usd(&config.model, &config.embedding_model);
+    // PR-07：落到统一登记处，Run Trace 可显示本次问答的真实成本。
+    let _ = run_repository::set_usage(conn, &agent_run_id, &usage);
 
     Ok(AskResponse {
         question: request.question,

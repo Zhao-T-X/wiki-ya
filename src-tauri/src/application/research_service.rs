@@ -15,7 +15,7 @@ use crate::application::dto::{AgentStepDto, ResearchReport, ResearchTaskCard, St
 use crate::domain::review::review::ReviewTarget;
 use crate::error::{AppError, AppResult};
 use crate::events::RunSink;
-use crate::infrastructure::{research_repository, review_repository};
+use crate::infrastructure::{research_repository, review_repository, run_repository};
 
 /// 最近的研究任务历史（新→旧，Phase 6 收尾）。
 pub fn list_tasks(conn: &Connection, limit: usize) -> AppResult<Vec<ResearchTaskCard>> {
@@ -99,6 +99,8 @@ pub fn start_research(
                 TokenUsage::from_completion(run.input_tokens, run.output_tokens, run.retries);
             let cfg = crate::ai::config::AiConfig::from_settings(conn);
             let cost_usd = usage.estimate_cost_usd(&cfg.model, &cfg.embedding_model);
+            // PR-07：落到统一登记处，Run Trace 可显示本次研究的真实成本。
+            let _ = run_repository::set_usage(conn, &run_id, &usage);
 
             Ok(ResearchReport {
                 task_id,

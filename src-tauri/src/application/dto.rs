@@ -783,6 +783,12 @@ pub struct RunTraceDto {
     pub agent_steps: Vec<AgentEventDto>,
     /// `run_type = extraction` 时的抽取明细快照。
     pub extraction_run: Option<ExtractionRunDto>,
+    /// 本次 Run 的真实 token 账本（PR-07）；未记录时为 `None`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+    /// 本次 Run 的成本估算（美元）；模型未知时为 `None`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------

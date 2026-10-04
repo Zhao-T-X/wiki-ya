@@ -9,6 +9,8 @@
 
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::ai::accounting::TokenUsage;
+use crate::ai::config::AiConfig;
 use crate::application::dto::{
     AgentEventDto, CandidateNodeDto, ClaimTraceDto, EvidenceNodeDto, EvolutionNodeDto, RunTraceDto,
 };
@@ -38,6 +40,14 @@ pub fn get_trace(conn: &Connection, run_id: &str) -> AppResult<RunTraceDto> {
         None
     };
 
+    // PR-07：解析真实 token 账本并据当前 AI 配置估算成本（未知模型 → None）。
+    let usage = run
+        .usage_json
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<TokenUsage>(s).ok());
+    let cfg = AiConfig::from_settings(conn);
+    let cost_usd = usage.and_then(|u| u.estimate_cost_usd(&cfg.model, &cfg.embedding_model));
+
     Ok(RunTraceDto {
         id: run.id,
         parent_run_id: run.parent_run_id,
@@ -52,6 +62,8 @@ pub fn get_trace(conn: &Connection, run_id: &str) -> AppResult<RunTraceDto> {
         metadata: serde_json::from_str(&run.metadata).unwrap_or(serde_json::Value::Null),
         agent_steps,
         extraction_run,
+        usage,
+        cost_usd,
     })
 }
 

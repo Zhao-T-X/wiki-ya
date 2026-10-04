@@ -380,6 +380,8 @@ fn run_pipeline(db_path: &PathBuf, run_id: &str, run_sink: &RunSink) -> AppResul
         None,
         None,
     )?;
+    // PR-07：把真实 token 账本落到统一登记处，使 Run Trace 能显示成本。
+    run_repository::set_usage(&conn, run_id, &all_usage)?;
     run_repository::finish(&conn, run_id, ExtractionRunStatus::Completed, None, None)?;
     run_sink(&RunEvent::Completed {
         run_id: run_id.to_string(),
