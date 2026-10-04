@@ -208,14 +208,20 @@ pub fn start_skill(
             let _ = tauri::Emitter::emit(&app, "run-events", event);
         })
     };
-    tauri::async_runtime::spawn_blocking(move || {
-        let _ = execute_skill_run(
-            &db_path,
-            &run_id_for_task,
-            &name_for_task,
-            input,
-            &run_events,
-        );
+    // PERF-05：Skill Run 先取并发闸门（限流），再 offload 到 blocking 线程池。
+    // 直接 spawn_blocking 会让排队任务立刻占用线程并发起模型调用，等于没限流。
+    tauri::async_runtime::spawn(async move {
+        let _permit = crate::ai::scheduler::acquire_skill().await;
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let _ = execute_skill_run(
+                &db_path,
+                &run_id_for_task,
+                &name_for_task,
+                input,
+                &run_events,
+            );
+        })
+        .await;
     });
 
     Ok(run_id)

@@ -17,6 +17,11 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 const EXTRACTION_CAPACITY: usize = 2;
 /// 抽取型 Skill 并发上限（与抽取争抢同一批端点配额）。
 const SKILL_CAPACITY: usize = 2;
+/// 研究 / 多轮 Agent 并发上限。
+///
+/// 研究比抽取更贵：单次任务内部就是多轮 ReAct（每轮一次模型调用 + 可能一次
+/// 工具调用），端点配额与 CPU 压力都远大于单轮补全。
+const AGENT_CAPACITY: usize = 2;
 
 /// 抽取闸门。
 pub fn extraction_gate() -> &'static Arc<Semaphore> {
@@ -41,6 +46,17 @@ pub async fn acquire_extraction() -> Option<OwnedSemaphorePermit> {
 /// 取一个 Skill 许可（语义同 [`acquire_extraction`]）。
 pub async fn acquire_skill() -> Option<OwnedSemaphorePermit> {
     skill_gate().clone().acquire_owned().await.ok()
+}
+
+/// 研究 / 多轮 Agent 闸门。
+pub fn agent_gate() -> &'static Arc<Semaphore> {
+    static GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    GATE.get_or_init(|| Arc::new(Semaphore::new(AGENT_CAPACITY)))
+}
+
+/// 取一个研究 / Agent 许可（语义同 [`acquire_extraction`]）。
+pub async fn acquire_agent() -> Option<OwnedSemaphorePermit> {
+    agent_gate().clone().acquire_owned().await.ok()
 }
 
 /// 当前排队/占用的抽取数（诊断用：UI/日志可观测闸门压力）。
