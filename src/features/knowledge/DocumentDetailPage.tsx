@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
+import { RawSourceToggle } from '@/components/content/RawSourceToggle';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { PageHeader } from '@/components/PageHeader';
 import { RefreshIcon, SparkIcon } from '@/components/icons';
@@ -112,11 +113,11 @@ export function DocumentDetailPage() {
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <section>
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">原文（不可变）</h3>
-              <Card className="max-h-[520px] overflow-y-auto p-4">
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-ink/90">
-                  {data.content}
-                </pre>
+              {/* PR-07 §10：默认「渲染」，但保留「原始」——所见即数据库内容。
+                  原文不可变，而渲染器可能有 bug 或被投毒，核对路径不能只有一个。 */}
+              <h3 className="mb-3 text-sm font-semibold text-ink">原文</h3>
+              <Card className="max-h-[560px] overflow-y-auto p-4">
+                <RawSourceToggle source={data.content} />
               </Card>
             </section>
 

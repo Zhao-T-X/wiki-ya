@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 
-import { Markdown } from '@/components/agent/Markdown';
+import { MarkdownContent } from '@/components/content/MarkdownContent';
 import { SourceList } from '@/components/agent/SourceCard';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { AskIcon, SparkIcon } from '@/components/icons';
@@ -106,7 +106,9 @@ export function AskPage() {
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Answer（流式生成中…）
               </h3>
-              <Markdown text={streamingAnswer} onCitation={jumpToSource} className="animate-pulse" />
+              <MarkdownContent onCitation={jumpToSource} className="animate-pulse">
+                {streamingAnswer}
+              </MarkdownContent>
             </Card>
           ) : (
             <div className="mt-4 flex items-center gap-2 text-xs text-muted">
@@ -138,7 +140,7 @@ export function AskPage() {
         <div className="mt-4 space-y-4">
           <Card className="p-5">
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Answer</h3>
-            <Markdown text={result.answer} onCitation={jumpToSource} />
+            <MarkdownContent onCitation={jumpToSource}>{result.answer}</MarkdownContent>
             {/* Why（M9）：回答的依据一目了然，条目可下钻到 Claim 溯源。 */}
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted">
               <span>

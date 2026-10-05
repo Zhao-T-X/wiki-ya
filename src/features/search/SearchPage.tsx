@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Collapse } from '@/components/agent/Collapse';
-import { Markdown } from '@/components/agent/Markdown';
+import { MarkdownContent } from '@/components/content/MarkdownContent';
 import { SourceList } from '@/components/agent/SourceCard';
 import { TokenLedger } from '@/components/agent/TokenLedger';
 import { ErrorNotice } from '@/components/ErrorNotice';
@@ -282,7 +282,9 @@ export function SearchPage() {
             ) : null}
 
             {streamingAnswer ? (
-              <Markdown text={streamingAnswer} onCitation={jumpToSource} className="animate-pulse" />
+              <MarkdownContent onCitation={jumpToSource} className="animate-pulse">
+                {streamingAnswer}
+              </MarkdownContent>
             ) : null}
 
             {answer && !answer.enabled ? (
@@ -296,7 +298,7 @@ export function SearchPage() {
 
             {answer && answer.enabled ? (
               <>
-                <Markdown text={answer.answer} onCitation={jumpToSource} />
+                <MarkdownContent onCitation={jumpToSource}>{answer.answer}</MarkdownContent>
                 {answer.note ? (
                   <p className="mt-3 text-[11px] leading-relaxed text-warn">{answer.note}</p>
                 ) : null}
@@ -428,7 +430,9 @@ function HitCard({ hit, onOpen }: { hit: SearchHit; onOpen: (path: string) => vo
             <Badge tone="accent">{searchKindLabel(hit.kind)}</Badge>
             <span className="truncate text-sm text-ink">{hit.title}</span>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-muted">{hit.snippet}</p>
+          <MarkdownContent mode="compact" className="mt-1 text-secondary">
+            {hit.snippet}
+          </MarkdownContent>
         </button>
         <div className="shrink-0 text-right">
           <p className="font-mono text-[11px] text-ink/80">{formatScore(hit.score)}</p>
