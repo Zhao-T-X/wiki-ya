@@ -378,6 +378,10 @@ export function SettingsPage() {
                   placeholder="text-embedding-3-small"
                   autoComplete="off"
                 />
+                <span className="text-[11px] text-muted">
+                  填 <code>local:bge-small-zh-v1.5</code> 则走本机推理，不联网、不计费
+                  （首次使用需下载约 90MB 权重）。切换模型后全部条目会重新向量化一次。
+                </span>
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-medium text-muted">上下文预算（token）</span>

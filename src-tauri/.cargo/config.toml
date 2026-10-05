@@ -1,11 +1,25 @@
-# 本文件只解决一个问题：本机全局 `~/.cargo/config` 把 crates-io 指向了
-# `git://mirrors.ustc.edu.cn/crates.io-index`，而 `git://` 协议在当前网络下
-# 无法读取 refs（Net/Eof 错误），导致任何依赖都无法解析。
+# 项目级 cargo 配置（引入本地 embedding 运行时 fastembed 时新增）。
 #
-# 这里把镜像换成同一站点的 **sparse** 索引（HTTPS + 增量拉取，也是 cargo 官方
-# 现在推荐的索引格式）。
+# 背景：本机 `~/.cargo/config` 把 crates-io 换成了
+# `git://mirrors.ustc.edu.cn/crates.io-index`，而该 `git://` 端点已不可用：
 #
-# 如果你已经修正了全局配置，可以直接删除本文件，不影响项目。
+#     $ git ls-remote git://mirrors.ustc.edu.cn/crates.io-index
+#     fatal: Could not read from remote repository.
+#
+# 之所以平时没暴露，是因为仓库带 `Cargo.lock` 且依赖已全部落在本地 registry
+# 缓存里，cargo 根本不访问索引；一旦**新增依赖**（fastembed / ort / tokenizers）
+# 就必然失败。
+#
+# 这里覆盖为同一镜像的 **sparse（HTTP）** 版本：换协议不换源，仍是 USTC 镜像。
+# 不能直接写 `sparse+https://index.crates.io/`，因为它就是 crates-io 本身，
+# cargo 会报 "source already defined by crates-io"。
+#
+# 锁文件里的 source 仍是规范的 `registry+https://github.com/rust-lang/crates.io-index`，
+# 换镜像只影响下载途径，`Cargo.lock` 与校验和都不会变化。
+#
+# 注：若在别的项目里新增依赖仍失败，需要修的是全局 `~/.cargo/config`——
+# 这里只覆盖本项目，不改用户环境。如果你已经修正了全局配置，
+# 可以直接删除本文件，不影响项目。
 [source.crates-io]
 replace-with = "ustc-sparse"
 

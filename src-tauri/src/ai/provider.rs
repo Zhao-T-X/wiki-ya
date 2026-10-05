@@ -13,6 +13,7 @@ use std::sync::{Mutex, OnceLock};
 use rusqlite::Connection;
 
 use crate::ai::config::AiConfig;
+use crate::ai::local_embedding;
 use crate::error::{AppError, AppResult};
 
 /// 一次补全请求。
@@ -868,16 +869,68 @@ fn extract_claims_json(text: &str) -> Option<String> {
     None
 }
 
+/// 补全与向量化**分流**的 provider。
+///
+/// 语义检索（embedding）和补全（chat）的部署形态常常不同：向量化可能走本地
+/// ONNX（`ai.embedding_model` 形如 `local:bge-small-zh-v1.5`），而补全仍走远程
+/// OpenAI 兼容接口。把两条链路塞进同一个 provider trait，就需要一个在 `embed`
+/// 上分流的包装：其余方法原样转发给补全侧。
+///
+/// 注意 `enabled()` 仍只反映**补全**能力（即是否拿到 API Key）：本地 embedding
+/// 不该让 Ask/Research 通过「AI 已启用」的检查，否则真正的补全请求才报错，
+/// 错误现场更难定位。
+struct SplitProvider {
+    /// 补全侧：有 Key 走 `OpenAiProvider`，否则 `OfflineProvider`。
+    chat: Box<dyn Provider>,
+    /// `ai.embedding_model` 原值；带 `local:` 前缀时由本地推理接管 `embed`。
+    embedding_model: String,
+}
+
+impl Provider for SplitProvider {
+    fn name(&self) -> &'static str {
+        self.chat.name()
+    }
+
+    fn enabled(&self) -> bool {
+        self.chat.enabled()
+    }
+
+    fn complete(&self, request: &CompletionRequest) -> AppResult<CompletionResponse> {
+        self.chat.complete(request)
+    }
+
+    fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        on_delta: &dyn Fn(&str),
+    ) -> AppResult<CompletionResponse> {
+        self.chat.complete_streaming(request, on_delta)
+    }
+
+    fn embed(&self, texts: &[String]) -> AppResult<EmbeddingOutput> {
+        if local_embedding::is_local_spec(&self.embedding_model) {
+            return local_embedding::embed(&self.embedding_model, texts);
+        }
+        self.chat.embed(texts)
+    }
+}
+
 /// 按当前环境配置选择 provider。
 ///
-/// 有 Key → `OpenAiProvider`；否则 → `OfflineProvider`（诚实降级）。
+/// 补全：有 Key → `OpenAiProvider`；否则 → `OfflineProvider`（诚实降级）。
+/// 向量化：见 [`SplitProvider`]——`ai.embedding_model` 带 `local:` 前缀时走本地
+/// 推理，此时即使没有 API Key 也能做语义检索。
 pub fn default_provider(conn: &Connection) -> Box<dyn Provider> {
     let config = AiConfig::from_settings(conn);
-    if config.enabled {
-        Box::new(OpenAiProvider::new(config))
+    let chat: Box<dyn Provider> = if config.enabled {
+        Box::new(OpenAiProvider::new(config.clone()))
     } else {
         Box::new(OfflineProvider)
-    }
+    };
+    Box::new(SplitProvider {
+        chat,
+        embedding_model: config.embedding_model,
+    })
 }
 
 /// 端点是否已标记为「流式专用」（供 RigAdapter 等其他 provider 路径复用）。

@@ -53,6 +53,18 @@ tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 aes-gcm = "0.11"
 # 主密钥与 nonce 的加密安全随机数来源（走 OS CSPRNG）。
 getrandom = "0.2"
+# 本地向量化（ai/local_embedding.rs）：fastembed = ONNX Runtime + tokenizers，
+# 首次使用自动下载权重，之后完全离线推理，不需要任何外部服务。
+#
+# 关掉默认 feature 是必须的：默认带 `image-models`，会拖进
+# image + rav1e + ravif + tiff + qoi + weezl 一整套图像/视频编解码栈，
+# 而本项目只做文本向量化。保留的两项是运行前提——
+#   ort-download-binaries-*: 构建期拉取 ONNX Runtime 动态库（否则需系统预装）
+#   hf-hub-native-tls:      运行期从 HuggingFace 拉模型权重
+fastembed = { version = "7.1.0", default-features = false, features = [
+    "ort-download-binaries-native-tls",
+    "hf-hub-native-tls",
+] }
 
 [features]
 # 保留：后续 custom-protocol 打包模式可能用到

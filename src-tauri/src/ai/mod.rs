@@ -21,6 +21,8 @@ pub mod accounting;
 pub mod agents;
 pub mod config;
 pub mod context;
+// 本地向量化（`ai.embedding_model` 形如 `local:bge-small-zh-v1.5`）。
+pub mod local_embedding;
 pub mod provider;
 pub mod rig_adapter;
 pub mod runtime;

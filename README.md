@@ -130,6 +130,38 @@ cd src-tauri
 cargo test
 ```
 
+### 本地向量化（可选，不联网、不计费）
+
+语义检索原本只能走远程 `/embeddings`，没配 API Key 就完全没有语义能力。
+把「向量模型」改成 `local:` 前缀即可切到**本机 ONNX 推理**（fastembed）：
+
+```
+local:bge-small-zh-v1.5     # 512 维，中文（默认推荐）
+local:bge-large-zh-v1.5     # 1024 维
+local:bge-small-en-v1.5     # 384 维
+local:bge-base-en-v1.5      # 768 维
+local:bge-large-en-v1.5     # 1024 维
+```
+
+要点：
+
+- **权重位置**：`<应用数据目录>/models`（macOS 为
+  `~/Library/Application Support/app.wikiya.desktop/models`）。首次使用自动从
+  HuggingFace 下载（bge-small-zh 约 90MB），之后**完全离线**；启动时会在后台
+  线程预热，不阻塞启动。国内网络可 `export HF_ENDPOINT=https://hf-mirror.com`。
+- **补全仍需 API Key**：`local:` 只接管向量化，Ask/Research 的生成仍走远程接口。
+  没有 Key 时语义检索照常可用，只是不能提问。
+- **不计费**：本地推理没有可上报的 token 用量，因此 Run 详情里的向量化 token
+  记 0、成本记 0（而不是拿字符数编一个看起来像真的数字）。
+- **切换模型会重新向量化**：向量按模型名分桶存储，换模型后全部条目重新向量化
+  一次，之后回到稳态。
+- 想验证下载与推理是否正常：
+
+  ```bash
+  cd src-tauri
+  cargo test --lib local_embedding -- --ignored --nocapture
+  ```
+
 ### 通过 `pnpm tauri:dev` 试一遍完整闭环
 
 1. **Home** 粘贴一段文字 → 捕获（会显示切片数；已配置 AI 时会自动抽取候选）

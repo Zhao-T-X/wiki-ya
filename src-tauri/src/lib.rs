@@ -67,6 +67,31 @@ fn key_file_path(db_path: &std::path::Path) -> PathBuf {
         .join(infrastructure::secrets::KEY_FILE_NAME)
 }
 
+/// 若配置了本地嵌入模型（`ai.embedding_model` 形如 `local:bge-small-zh-v1.5`），
+/// 在后台线程里预热它。
+///
+/// 为什么放后台：首次预热要联网下载权重（bge-small-zh 约 90MB），放在 setup
+/// 里会卡住启动。失败只记日志——预热失败不该让应用起不来，真正的错误会在
+/// 第一次 `embed()` 时原样抛出。
+fn warmup_local_embedding(db_path: &std::path::Path) {
+    let Ok(conn) = infrastructure::db::open(db_path) else {
+        return;
+    };
+    let spec = ai::config::AiConfig::from_settings(&conn).embedding_model;
+    if !ai::local_embedding::is_local_spec(&spec) {
+        return;
+    }
+    let spawned = std::thread::Builder::new()
+        .name("local-embed-warmup".into())
+        .spawn(move || {
+            // 结果（含失败原因）由 warmup 内部写日志。
+            let _ = ai::local_embedding::warmup(&spec);
+        });
+    if spawned.is_err() {
+        crate::log_warn!("无法启动本地嵌入模型预热线程，首次检索时将同步加载");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 日志先行初始化：后续所有模块都能按 WIKIYA_LOG 输出。
@@ -112,6 +137,13 @@ pub fn run() {
                         crate::log_warn!("初始化 API Key 加密器失败，AI 将不可用：{err}");
                     }
                 }
+            }
+
+            // PERF-08：本地嵌入模型的权重与数据库同放一个应用数据目录。
+            // 必须在任何 embed 之前注入——打包后进程的 CWD 不可控。
+            if let Some(dir) = db_path.parent() {
+                ai::local_embedding::set_cache_root(dir.to_path_buf());
+                warmup_local_embedding(&db_path);
             }
 
             // SEC-002：把历史遗留的明文 API Key 加密迁移进 SQLite。

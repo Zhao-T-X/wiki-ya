@@ -9,6 +9,7 @@ use rusqlite::Connection;
 use crate::ai::accounting::TokenUsage;
 use crate::ai::config::AiConfig;
 use crate::ai::context::ContextKind;
+use crate::ai::local_embedding;
 use crate::ai::provider;
 use crate::ai::segmentation::{split_for_embedding, Segment};
 use crate::application::dto::{SearchInput, SearchResponse};
@@ -115,14 +116,22 @@ pub fn semantic_search_with_usage(
 
         // 分批向量化：单次请求过大既会超 API 上下文，也会撞速率限制。
         // 逐批入库（chunk_id 主键幂等），中途失败时已写入的批次仍然有效。
+        //
+        // PERF-08：切段上限按当前模型取。本地模型（`local:` 前缀）读模型登记表里的
+        // 真实上限；远程模型拿不到元数据，保守回退——绝不静默截断。
+        let embed_context = local_embedding::embedding_context_tokens(&config.embedding_model);
         for batch in batch_for_embedding(&missing) {
             // PERF-07（方案 A）：逐 chunk 按模型上下文切段，每段各出一个向量。
             // 短 chunk 只切一段，行为与改造前完全等价。
             let mut jobs: Vec<(String, usize, Segment)> = Vec::new();
             for (chunk_id, content) in batch.iter() {
-                for (part, seg) in split_for_embedding(content, EMBED_CONTEXT_TOKENS, EMBED_OVERLAP_TOKENS)
-                    .into_iter()
-                    .enumerate()
+                for (part, seg) in split_for_embedding(
+                    content,
+                    embed_context,
+                    EMBED_OVERLAP_TOKENS,
+                )
+                .into_iter()
+                .enumerate()
                 {
                     jobs.push((chunk_id.clone(), part, seg));
                 }
@@ -171,13 +180,6 @@ pub fn semantic_search_with_usage(
         Err(_) => Ok((Vec::new(), TokenUsage::default())),
     }
 }
-
-/// 嵌入模型的上下文上限（PERF-07）。
-///
-/// 默认按 `bge-small-zh-v1.5` 的 512 token 取 510（留 2 给 [CLS]/[SEP]）。
-/// 换模型时**必须**同步改这里——否则超限内容会被静默截断（这正是本方案要消灭的）。
-/// 接入本地运行时后，应改为从模型元数据读取。
-const EMBED_CONTEXT_TOKENS: usize = 510;
 
 /// 相邻段的重叠 token，避免句子被拦腰截断。
 const EMBED_OVERLAP_TOKENS: usize = 64;
