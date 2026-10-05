@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
-import { Link } from 'react-router-dom';
 
+import { Markdown } from '@/components/agent/Markdown';
+import { SourceList } from '@/components/agent/SourceCard';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { AskIcon, SparkIcon } from '@/components/icons';
 import { Badge } from '@/components/ui/Badge';
@@ -13,23 +14,14 @@ import { app_info, ask, get_run_trace, WikiError } from '@/lib/api';
 import { formatCompressionRatio, newRunId } from '@/lib/format';
 import { useRunEvents } from '@/lib/useRunEvents';
 import { useAsyncData } from '@/lib/hooks';
-import type { AskResponse, AskSource } from '@/types/ipc';
+import type { AskResponse } from '@/types/ipc';
 
-/**
- * 把 source.kind + id 解析为详情页路由。
- * entity/claim/document 有独立详情页；chunk 等无法可靠下钻时返回 null（仅展示文本）。
- */
-function sourcePath(source: AskSource): string | null {
-  switch (source.kind) {
-    case 'entity':
-      return `/knowledge/${source.id}`;
-    case 'claim':
-      return `/claims/${source.id}`;
-    case 'document':
-      return `/documents/${source.id}`;
-    default:
-      return null;
-  }
+/** 点击答案里的 [n] 角标：滚动到下方对应来源卡片。 */
+function jumpToSource(index: number) {
+  document.getElementById(`source-${index}`)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+  });
 }
 
 export function AskPage() {
@@ -114,9 +106,7 @@ export function AskPage() {
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Answer（流式生成中…）
               </h3>
-              <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/90">
-                {streamingAnswer}
-              </div>
+              <Markdown text={streamingAnswer} onCitation={jumpToSource} className="animate-pulse" />
             </Card>
           ) : (
             <div className="mt-4 flex items-center gap-2 text-xs text-muted">
@@ -148,9 +138,7 @@ export function AskPage() {
         <div className="mt-4 space-y-4">
           <Card className="p-5">
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Answer</h3>
-            <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/90">
-              {result.answer}
-            </div>
+            <Markdown text={result.answer} onCitation={jumpToSource} />
             {/* Why（M9）：回答的依据一目了然，条目可下钻到 Claim 溯源。 */}
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted">
               <span>
@@ -179,41 +167,12 @@ export function AskPage() {
           {result.sources.length > 0 ? (
             <Card className="p-5">
               <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                Sources（{result.sources.length}）
+                来源（{result.sources.length}）
               </h3>
-              <ul className="space-y-3">
-                {result.sources.map((source) => {
-                  const path = sourcePath(source);
-                  const titleNode = path ? (
-                    <Link to={path} className="text-accent hover:underline">
-                      {source.title}
-                    </Link>
-                  ) : (
-                    <span className="text-ink">{source.title}</span>
-                  );
-                  return (
-                    <li key={`${source.kind}-${source.id}-${source.index}`} className="rounded-lg border border-line bg-canvas p-3">
-                      <div className="flex items-baseline gap-2 text-sm">
-                        <span className="font-mono text-xs text-muted">[{source.index}]</span>
-                        {titleNode}
-                        <Badge tone="neutral" className="shrink-0">
-                          {source.kind}
-                        </Badge>
-                        {/* PERF-07：引文只来自该 chunk 的其中一段，必须如实标注，
-                            否则会让人误以为看到了整块原文。 */}
-                        {source.part !== undefined ? (
-                          <Badge tone="warn" className="shrink-0" title="该切片超出嵌入模型上下文，引文为其中一段">
-                            第 {source.part + 1} 段
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-1.5 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-muted">
-                        {source.snippet}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ul>
+              {/* 统一到共享组件：此前这里是第三份手写实现，且段号写成
+                  `part + 1` —— 后端 part 已是 1-based（part=0 → undefined），
+                  所以那会把「第 1 段」显示成「第 2 段」。 */}
+              <SourceList sources={result.sources} />
             </Card>
           ) : null}
 

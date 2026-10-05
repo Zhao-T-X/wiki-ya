@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
 
+import { Markdown } from '@/components/agent/Markdown';
 import { ErrorNotice } from '@/components/ErrorNotice';
 import { ResearchIcon, SparkIcon } from '@/components/icons';
 import { Badge } from '@/components/ui/Badge';
@@ -152,9 +153,7 @@ export function ResearchPage() {
                 <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
                   Findings（流式生成中…）
                 </p>
-                <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/90">
-                  {findingsPreview}
-                </div>
+                <Markdown text={findingsPreview} className="animate-pulse" />
               </div>
             ) : null}
           </div>
@@ -184,9 +183,7 @@ export function ResearchPage() {
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
               Findings
             </h3>
-            <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/90">
-              {report.answer}
-            </div>
+            <Markdown text={report.answer} />
             {report.usage ? (
               <p className="mt-3 border-t border-line pt-3 text-[10px] text-muted/80">
                 真实消耗：输入 {report.usage.inputTokens} · 输出 {report.usage.outputTokens} tokens
