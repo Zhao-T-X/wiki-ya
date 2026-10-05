@@ -52,7 +52,7 @@ export function ClaimCard({ claim, expanded = false, onToggle, children }: Claim
           </div>
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-muted">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted">
           <span>置信度 {formatConfidence(claim.confidence)}</span>
           <span className="text-line">·</span>
           <span>{claimTypeLabel(claim.claimType)}</span>
@@ -70,7 +70,7 @@ export function ClaimCard({ claim, expanded = false, onToggle, children }: Claim
           ) : null}
         </div>
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-muted/80">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted/80">
           <span className="truncate">来源：{claim.sourceDocumentTitle ?? '未关联文档'}</span>
           <span className="text-line">·</span>
           <span>{formatRelativeTime(claim.createdAt)}</span>
@@ -80,7 +80,7 @@ export function ClaimCard({ claim, expanded = false, onToggle, children }: Claim
         </div>
 
         {claim.sourceQuote ? (
-          <blockquote className="mt-2 border-l-2 border-line pl-3 text-[11px] italic leading-relaxed text-muted">
+          <blockquote className="mt-2 border-l-2 border-line pl-3 text-meta italic leading-relaxed text-muted">
             {claim.sourceQuote}
           </blockquote>
         ) : null}

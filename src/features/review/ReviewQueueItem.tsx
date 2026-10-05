@@ -43,10 +43,10 @@ export function ReviewQueueItem({
         </Badge>
       </div>
 
-      <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-ink/90">
+      <p className="mt-1.5 line-clamp-2 text-secondary leading-relaxed text-ink/90">
         {relation.sourceText}
       </p>
-      <p className="mt-0.5 line-clamp-2 text-[13px] leading-relaxed text-muted">
+      <p className="mt-0.5 line-clamp-2 text-secondary leading-relaxed text-muted">
         {relation.targetText}
       </p>
     </button>

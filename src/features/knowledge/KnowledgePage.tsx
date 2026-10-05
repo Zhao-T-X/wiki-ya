@@ -144,7 +144,7 @@ export function KnowledgePage() {
                 ))}
               </Select>
             ) : (
-              <label className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted">
+              <label className="flex items-center gap-1.5 whitespace-nowrap text-meta text-muted">
                 <input
                   type="checkbox"
                   checked={onlyCurrent}

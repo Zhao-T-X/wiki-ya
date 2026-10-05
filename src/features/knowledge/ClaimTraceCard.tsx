@@ -41,12 +41,12 @@ export function ClaimTraceCard({ claimId }: { claimId: string }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] leading-relaxed text-muted">
+      <p className="text-meta leading-relaxed text-muted">
         从当前知识逐层下钻到源头（知识关系溯源，不含运行日志）。
       </p>
 
       {!hasAny ? (
-        <Card className="p-3 text-[11px] text-muted">
+        <Card className="p-3 text-meta text-muted">
           这条知识由手动录入，暂无自动抽取溯源。
         </Card>
       ) : null}
@@ -62,7 +62,7 @@ export function ClaimTraceCard({ claimId }: { claimId: string }) {
             </Badge>
           }
         >
-          <div className="space-y-1 text-[11px] text-muted">
+          <div className="space-y-1 text-meta text-muted">
             <div>
               候选 <IdText value={candidate.candidateId} /> 经人工 Review 接受，落库为当前 Claim。
             </div>
@@ -92,7 +92,7 @@ export function ClaimTraceCard({ claimId }: { claimId: string }) {
             <Badge tone={run.status === 'completed' ? 'ok' : 'warn'}>{run.status}</Badge>
           }
         >
-          <div className="space-y-1 text-[11px] text-muted">
+          <div className="space-y-1 text-meta text-muted">
             <div>
               Run <IdText value={run.id} /> · 类型 {run.runType} · actor {run.actor}
             </div>
@@ -124,7 +124,7 @@ export function ClaimTraceCard({ claimId }: { claimId: string }) {
         >
           <ul className="space-y-2">
             {evidences.map((evidence) => (
-              <li key={evidence.evidenceId} className="text-[11px]">
+              <li key={evidence.evidenceId} className="text-meta">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
                     to={`/documents/${evidence.documentId}`}
@@ -155,7 +155,7 @@ export function ClaimTraceCard({ claimId }: { claimId: string }) {
       {/* 4) 演化 Evolution：该 Claim 参与的关系（可下钻到关联 Claim 的溯源） */}
       {evolutions.length > 0 ? (
         <TraceStep title="演化 Evolution" summary={`参与 ${evolutions.length} 条关系`}>
-          <ul className="space-y-1 text-[11px] text-muted">
+          <ul className="space-y-1 text-meta text-muted">
             {evolutions.map((evo) => {
               const otherId =
                 evo.sourceClaimId === claimId ? evo.targetClaimId : evo.sourceClaimId;
@@ -209,7 +209,7 @@ function TraceStep({
         ) : (
           <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
         )}
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <span className="text-meta font-semibold uppercase tracking-wider text-muted">
           {title}
         </span>
         {badge}

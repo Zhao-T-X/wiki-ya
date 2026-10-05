@@ -134,7 +134,7 @@ export function AgentManagerPanel() {
                   <Badge tone="ok">只读</Badge>
                 )}
               </div>
-              <p className="text-[11px] text-muted">
+              <p className="text-meta text-muted">
                 Skills：{profile.skills.length > 0 ? profile.skills.join(' · ') : '（无）'}
               </p>
             </div>
@@ -167,7 +167,7 @@ export function AgentManagerPanel() {
           <div className="space-y-3">
             {editing.isNew ? (
               <label className="block space-y-1">
-                <span className="text-[11px] font-medium text-muted">标识名（小写字母/数字/连字符）</span>
+                <span className="text-meta font-medium text-muted">标识名（小写字母/数字/连字符）</span>
                 <Input
                   value={editing.name}
                   onChange={(e) => setEditing({ ...editing, name: e.target.value })}
@@ -176,7 +176,7 @@ export function AgentManagerPanel() {
               </label>
             ) : null}
             <label className="block space-y-1">
-              <span className="text-[11px] font-medium text-muted">展示名</span>
+              <span className="text-meta font-medium text-muted">展示名</span>
               <Input
                 value={editing.displayName}
                 onChange={(e) => setEditing({ ...editing, displayName: e.target.value })}
@@ -184,14 +184,14 @@ export function AgentManagerPanel() {
               />
             </label>
             <div className="space-y-1">
-              <span className="text-[11px] font-medium text-muted">Skills（按顺序执行）</span>
+              <span className="text-meta font-medium text-muted">Skills（按顺序执行）</span>
               <div className="flex flex-wrap gap-2">
                 {allSkills.map((skill) => {
                   const checked = editing.skills.includes(skill.name);
                   return (
                     <label
                       key={skill.name}
-                      className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                      className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-meta ${
                         checked ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted'
                       }`}
                     >
@@ -208,10 +208,10 @@ export function AgentManagerPanel() {
               </div>
             </div>
             <div className="space-y-1">
-              <span className="text-[11px] font-medium text-muted">权限上限</span>
+              <span className="text-meta font-medium text-muted">权限上限</span>
               <div className="flex gap-2">
                 <label
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-meta ${
                     !editing.policy.includes('propose')
                       ? 'border-accent bg-accent/10 text-ink'
                       : 'border-line text-muted'
@@ -226,7 +226,7 @@ export function AgentManagerPanel() {
                   只读（READ）
                 </label>
                 <label
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-meta ${
                     editing.policy.includes('propose')
                       ? 'border-accent bg-accent/10 text-ink'
                       : 'border-line text-muted'

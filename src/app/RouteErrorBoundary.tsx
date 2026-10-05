@@ -23,7 +23,7 @@ export function RouteErrorBoundary() {
       <PageHeader title="出错了" subtitle="页面渲染时发生未预期的错误。" />
       <Card className="space-y-3 p-5">
         <p className="text-sm font-medium text-ink">页面无法正常渲染</p>
-        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-canvas p-3 font-mono text-[11px] leading-relaxed text-muted">
+        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-canvas p-3 font-mono text-meta leading-relaxed text-muted">
           {message}
         </pre>
         <div className="flex gap-2">

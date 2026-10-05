@@ -21,7 +21,7 @@ export interface CreateClaimDialogProps {
   defaultSubject: string;
 }
 
-const FIELD_LABEL = 'mb-1.5 block text-[11px] font-medium text-muted';
+const FIELD_LABEL = 'mb-1.5 block text-meta font-medium text-muted';
 
 /**
  * 手动录入 Claim —— AI 关闭时的降级录入路径（分析报告 R2）。

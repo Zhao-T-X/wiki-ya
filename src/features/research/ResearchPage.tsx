@@ -104,7 +104,7 @@ export function ResearchPage() {
 
       <Card className="p-5">
         <form onSubmit={handleStart} className="flex flex-col gap-3">
-          <label htmlFor="research-question" className="text-[11px] font-medium text-muted">
+          <label htmlFor="research-question" className="text-meta font-medium text-muted">
             研究问题
           </label>
           <div className="flex gap-2">
@@ -140,7 +140,7 @@ export function ResearchPage() {
                     <Badge tone={step.ok ? 'ok' : 'warn'} className="shrink-0">
                       {step.tool}
                     </Badge>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
+                    <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted">
                       {step.summary}
                     </span>
                   </li>
@@ -150,7 +150,7 @@ export function ResearchPage() {
 
             {findingsPreview ? (
               <div className="rounded-lg border border-line bg-canvas p-4">
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                <p className="mb-1.5 text-meta font-semibold uppercase tracking-wider text-muted">
                   Findings（流式生成中…）
                 </p>
                 <MarkdownContent className="animate-pulse">{findingsPreview}</MarkdownContent>
@@ -180,7 +180,7 @@ export function ResearchPage() {
       {!loading && !error && report && report.enabled ? (
         <div className="mt-4 space-y-4">
           <Card className="p-5">
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <h3 className="mb-2 text-meta font-semibold uppercase tracking-wider text-muted">
               Findings
             </h3>
             <MarkdownContent>{report.answer}</MarkdownContent>
@@ -195,7 +195,7 @@ export function ResearchPage() {
 
           {report.steps.length > 0 ? (
             <Card className="p-5">
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <h3 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
                 Process（{report.steps.length} 步）
               </h3>
               <ol className="space-y-2">
@@ -210,7 +210,7 @@ export function ResearchPage() {
                         {step.tool}
                       </Badge>
                     </div>
-                    <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted">
+                    <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-words font-mono text-meta leading-relaxed text-muted">
                       {step.summary}
                     </pre>
                   </li>
@@ -232,7 +232,7 @@ export function ResearchPage() {
       ) : null}
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <h2 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
           历史任务
         </h2>
         {tasks.loading && !tasks.data ? (
@@ -254,7 +254,7 @@ export function ResearchPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ink">{task.question}</p>
                   {task.summary ? (
-                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted">
+                    <p className="mt-0.5 line-clamp-2 text-meta leading-relaxed text-muted">
                       {task.summary}
                     </p>
                   ) : null}

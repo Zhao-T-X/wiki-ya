@@ -19,7 +19,7 @@ export interface TokenLedgerProps {
 export function TokenLedger({ usage, costUsd, className }: TokenLedgerProps) {
   if (!usage) {
     return (
-      <p className={cn('text-[11px] text-muted', className)}>
+      <p className={cn('text-meta text-muted', className)}>
         本次运行没有上报用量（本地推理不计费，或该端点未返回 usage）。
       </p>
     );
@@ -28,7 +28,7 @@ export function TokenLedger({ usage, costUsd, className }: TokenLedgerProps) {
   const item = (label: string, value: number) => (
     <div key={label} className="flex items-baseline gap-1.5">
       <span className="text-[10px] uppercase tracking-wider text-muted">{label}</span>
-      <span className="font-mono text-[11px] text-ink">{formatNumber(value)}</span>
+      <span className="font-mono text-meta text-ink">{formatNumber(value)}</span>
     </div>
   );
 
@@ -41,7 +41,7 @@ export function TokenLedger({ usage, costUsd, className }: TokenLedgerProps) {
       {costUsd !== undefined ? (
         <div className="flex items-baseline gap-1.5">
           <span className="text-[10px] uppercase tracking-wider text-muted">成本</span>
-          <span className="font-mono text-[11px] text-ink">${costUsd.toFixed(4)}</span>
+          <span className="font-mono text-meta text-ink">${costUsd.toFixed(4)}</span>
         </div>
       ) : null}
     </div>

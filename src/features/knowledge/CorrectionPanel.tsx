@@ -80,7 +80,7 @@ export function CorrectionPanel({ documentId }: CorrectionPanelProps) {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">
           纠正检查
         </h3>
         <Button size="sm" variant="secondary" loading={running} onClick={start}>
@@ -111,7 +111,7 @@ export function CorrectionPanel({ documentId }: CorrectionPanelProps) {
                 {summary.relations.map((relation) => (
                   <li
                     key={relation.id}
-                    className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-[11px]"
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-meta"
                   >
                     <Badge tone="accent">{relationshipLabel(relation.relationship)}</Badge>
                     {relation.reason ? (
@@ -122,7 +122,7 @@ export function CorrectionPanel({ documentId }: CorrectionPanelProps) {
               </ul>
               <Link
                 to="/review"
-                className="mt-3 inline-block text-[11px] text-accent hover:underline"
+                className="mt-3 inline-block text-meta text-accent hover:underline"
               >
                 去处理 →
               </Link>

@@ -31,7 +31,7 @@ export function Separator({
     return (
       <div className={cn('flex items-center gap-3', className)}>
         <span className="h-px flex-1 bg-line" />
-        <span className="text-[11px] uppercase tracking-wider text-muted">{label}</span>
+        <span className="text-meta uppercase tracking-wider text-muted">{label}</span>
         <span className="h-px flex-1 bg-line" />
       </div>
     );

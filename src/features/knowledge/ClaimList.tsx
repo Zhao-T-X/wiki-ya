@@ -59,10 +59,10 @@ export function ClaimList({ claims, emptyText }: ClaimListProps) {
 
             {relations.length > 0 ? (
               <div className="mt-3">
-                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">演化关系</p>
+                <p className="mb-1.5 text-meta font-medium uppercase tracking-wide text-muted">演化关系</p>
                 <ul className="space-y-1.5">
                   {relations.map((relation) => (
-                    <li key={relation.id} className="text-[11px] leading-relaxed text-muted">
+                    <li key={relation.id} className="text-meta leading-relaxed text-muted">
                       <Badge tone={relationshipTone(relation.relationship)}>
                         {relationshipLabel(relation.relationship)}
                       </Badge>

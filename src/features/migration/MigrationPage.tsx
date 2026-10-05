@@ -72,7 +72,7 @@ export function MigrationPage() {
 
       <Card className="space-y-4 p-5">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[11px] font-medium text-muted">存量库路径</span>
+          <span className="text-meta font-medium text-muted">存量库路径</span>
           <Input
             value={sourcePath}
             onChange={(e) => setSourcePath(e.target.value)}
@@ -113,7 +113,7 @@ export function MigrationPage() {
             <Badge tone={probe.compatible ? 'ok' : 'danger'}>
               {probe.compatible ? '兼容' : '不兼容'}
             </Badge>
-            <span className="truncate font-mono text-[11px] text-muted">{probe.sourcePath}</span>
+            <span className="truncate font-mono text-meta text-muted">{probe.sourcePath}</span>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Metric label="文档" value={probe.documentCount} />
@@ -122,12 +122,12 @@ export function MigrationPage() {
             <Metric label="claims 表" value={probe.hasClaims ? '有' : '无'} />
           </div>
           {probe.tables.length > 0 ? (
-            <p className="text-[11px] text-muted">
+            <p className="text-meta text-muted">
               发现表：{probe.tables.join(', ')}
             </p>
           ) : null}
           {!probe.compatible ? (
-            <p className="text-[11px] leading-relaxed text-warn">
+            <p className="text-meta leading-relaxed text-warn">
               存量库缺少 documents / entities / claims 三张表，无法迁移。请确认路径指向正确的源库。
             </p>
           ) : null}
@@ -154,18 +154,18 @@ export function MigrationPage() {
             <Metric label="Claim 跳过" value={report.claimsSkipped} />
           </div>
           {report.backupPath ? (
-            <p className="text-[11px] text-muted">
+            <p className="text-meta text-muted">
               备份：<span className="font-mono">{report.backupPath}</span>
             </p>
           ) : null}
           {report.notes.length > 0 ? (
             <div>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <p className="mb-1.5 text-meta font-semibold uppercase tracking-wider text-muted">
                 跳过 / 失败（{report.notes.length}）
               </p>
               <ul className="space-y-1">
                 {report.notes.map((note, index) => (
-                  <li key={index} className="text-[11px] leading-relaxed text-warn">
+                  <li key={index} className="text-meta leading-relaxed text-warn">
                     · {note}
                   </li>
                 ))}

@@ -63,5 +63,5 @@ export function RawSourceToggle({
 
 /** 供页面在标题区自定义右侧内容时使用。 */
 export function RawSourceLabel({ children }: { children: ReactNode }) {
-  return <span className="text-[11px] text-muted">{children}</span>;
+  return <span className="text-meta text-muted">{children}</span>;
 }

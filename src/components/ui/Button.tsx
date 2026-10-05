@@ -32,7 +32,7 @@ const buttonVariants = cva(
         link: 'border border-transparent bg-transparent text-accent underline-offset-4 hover:underline',
       },
       size: {
-        xs: 'h-6 gap-1 rounded-md px-2 text-[11px]',
+        xs: 'h-6 gap-1 rounded-md px-2 text-meta',
         sm: 'h-8 gap-1.5 rounded-lg px-3 text-xs',
         md: 'h-9 gap-2 rounded-lg px-3.5 text-sm',
         lg: 'h-11 gap-2 rounded-lg px-6 text-sm',

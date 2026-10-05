@@ -46,7 +46,7 @@ export function Collapse({
             open && 'rotate-90',
           )}
         />
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted">
+        <span className="min-w-0 flex-1 truncate text-meta font-medium text-muted">
           {title}
         </span>
         {hint ? <span className="shrink-0 font-mono text-[10px] text-muted/80">{hint}</span> : null}

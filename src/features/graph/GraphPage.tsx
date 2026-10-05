@@ -69,7 +69,7 @@ export function GraphPage() {
       <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <div className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-[11px] font-medium text-muted">根实体</label>
+            <label className="mb-1.5 block text-meta font-medium text-muted">根实体</label>
             <div className="relative">
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
               <Input
@@ -117,7 +117,7 @@ export function GraphPage() {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1.5 block text-[11px] font-medium text-muted" htmlFor="graph-depth">
+              <label className="mb-1.5 block text-meta font-medium text-muted" htmlFor="graph-depth">
                 Depth
               </label>
               <Select
@@ -133,7 +133,7 @@ export function GraphPage() {
               </Select>
             </div>
             <div>
-              <label className="mb-1.5 block text-[11px] font-medium text-muted" htmlFor="graph-predicate">
+              <label className="mb-1.5 block text-meta font-medium text-muted" htmlFor="graph-predicate">
                 Predicate
               </label>
               <Select
@@ -200,7 +200,7 @@ export function GraphPage() {
           ) : null}
 
           {rootId && graph.data ? (
-            <p className="mt-3 text-[11px] text-muted">
+            <p className="mt-3 text-meta text-muted">
               提示：点击任意节点可跳转到该实体的 Knowledge 详情。
             </p>
           ) : null}

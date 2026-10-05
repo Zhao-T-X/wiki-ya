@@ -105,7 +105,7 @@ export function SearchAnswerPanel({
           <>
             <MarkdownContent onCitation={jump}>{answer.answer}</MarkdownContent>
             {answer.note ? (
-              <p className="mt-3 text-[11px] leading-relaxed text-warn">{answer.note}</p>
+              <p className="mt-3 text-meta leading-relaxed text-warn">{answer.note}</p>
             ) : null}
           </>
         ) : null}

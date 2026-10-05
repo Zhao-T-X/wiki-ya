@@ -14,8 +14,8 @@ export function ReviewEvidence({ quote }: { quote: string | null }) {
       <Card tone="quiet" className="flex items-start gap-2 p-3">
         <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn" />
         <div>
-          <p className="text-[13px] font-medium text-ink">没有直接引文</p>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-muted">
+          <p className="text-secondary font-medium text-ink">没有直接引文</p>
+          <p className="mt-0.5 text-meta leading-relaxed text-muted">
             这条判定来自确定性规则（主语与谓语相同、对象不同），不是从原文摘出来的。
             规则本身是可靠的，但你无法据此核对原文。
           </p>

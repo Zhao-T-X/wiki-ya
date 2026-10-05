@@ -63,7 +63,10 @@ export function App() {
       <Sidebar />
       <main className="h-full min-w-0 flex-1 overflow-y-auto">
         {!isTauri() ? <PreviewBanner /> : null}
-        <div className="mx-auto w-full max-w-[1180px] px-8 py-8">
+        {/* PR-07 §7：workspace 宽度上限。**阅读宽度不靠这里收紧**——
+            知识正文（文档 / Claim / 答案）由各页自己加 max-w-reading，
+            因为 Search/Review 需要比正文更宽的可用空间（任务书 §17）。 */}
+        <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
           <Outlet />
         </div>
       </main>

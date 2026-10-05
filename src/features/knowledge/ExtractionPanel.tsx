@@ -249,7 +249,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">AI 抽取</h3>
+        <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">AI 抽取</h3>
         {!running ? (
           <Button size="sm" variant="primary" loading={starting} onClick={startRun}>
             <SparkIcon className="h-3.5 w-3.5" />
@@ -385,7 +385,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
               <Card key={candidate.id} className="p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-1.5 text-meta">
                       <span className="font-medium text-ink">{candidate.subject}</span>
                       <Badge tone="accent">{candidate.predicate}</Badge>
                       {candidate.objectText ? (
@@ -399,7 +399,7 @@ export function ExtractionPanel({ documentId, onClaimsAccepted }: ExtractionPane
                       ) : null}
                     </div>
                     {candidate.content ? (
-                      <p className="text-[11px] leading-relaxed text-muted">{candidate.content}</p>
+                      <p className="text-meta leading-relaxed text-muted">{candidate.content}</p>
                     ) : null}
                     {candidate.sourceQuote ? (
                       <p className="text-[10px] leading-relaxed text-muted/70">

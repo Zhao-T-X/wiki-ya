@@ -81,7 +81,7 @@ export function AskPage() {
 
       <Card className="p-5">
         <form onSubmit={handleAsk} className="flex flex-col gap-3">
-          <label htmlFor="ask-question" className="text-[11px] font-medium text-muted">
+          <label htmlFor="ask-question" className="text-meta font-medium text-muted">
             提问
           </label>
           <div className="flex gap-2">
@@ -103,7 +103,7 @@ export function AskPage() {
         {loading ? (
           streamingAnswer ? (
             <Card className="mt-4 p-5">
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <h3 className="mb-2 text-meta font-semibold uppercase tracking-wider text-muted">
                 Answer（流式生成中…）
               </h3>
               <MarkdownContent onCitation={jumpToSource} className="animate-pulse">
@@ -139,10 +139,10 @@ export function AskPage() {
       {!loading && !error && result && result.enabled ? (
         <div className="mt-4 space-y-4">
           <Card className="p-5">
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Answer</h3>
+            <h3 className="mb-2 text-meta font-semibold uppercase tracking-wider text-muted">Answer</h3>
             <MarkdownContent onCitation={jumpToSource}>{result.answer}</MarkdownContent>
             {/* Why（M9）：回答的依据一目了然，条目可下钻到 Claim 溯源。 */}
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px] text-muted">
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-meta text-muted">
               <span>
                 使用了 <span className="font-medium text-ink">{result.sources.length}</span>{' '}
                 条知识
@@ -168,7 +168,7 @@ export function AskPage() {
 
           {result.sources.length > 0 ? (
             <Card className="p-5">
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <h3 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
                 来源（{result.sources.length}）
               </h3>
               {/* 统一到共享组件：此前这里是第三份手写实现，且段号写成
@@ -180,7 +180,7 @@ export function AskPage() {
 
           {result.contextStats ? (
             <Card className="p-5">
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <h3 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
                 Context Stats
               </h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -193,7 +193,7 @@ export function AskPage() {
                 />
               </div>
               {result.contextStats.truncated ? (
-                <p className="mt-3 flex items-center gap-1.5 text-[11px] text-warn">
+                <p className="mt-3 flex items-center gap-1.5 text-meta text-warn">
                   <AskIcon className="h-3.5 w-3.5" />
                   部分检索结果因超预算被截断。
                 </p>
@@ -231,10 +231,10 @@ function AgentRunDetails({ runId }: { runId: string }) {
       : '';
   return (
     <Card className="p-5">
-      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+      <h3 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
         运行详情
       </h3>
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-meta text-muted">
         <Badge tone={run.status === 'completed' ? 'ok' : 'warn'}>{run.status}</Badge>
         {model ? <span>模型：{model}</span> : null}
         <span>开始：{run.startedAt}</span>

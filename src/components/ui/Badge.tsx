@@ -13,7 +13,7 @@ import { statusLabel, statusTone, type Tone } from '@/lib/status';
  * 改成一行文字。`variant="text"` 是给这种场景准备的：保留语义色，去掉边框。
  */
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-4',
+  'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-meta font-medium leading-4',
   {
     variants: {
       tone: {

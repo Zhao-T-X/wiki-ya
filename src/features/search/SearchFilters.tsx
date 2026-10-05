@@ -69,7 +69,7 @@ export function SearchFilters({
           ))}
         </div>
         {resultCount !== undefined ? (
-          <span className="text-[11px] text-muted">{resultCount} 条结果</span>
+          <span className="text-meta text-muted">{resultCount} 条结果</span>
         ) : null}
       </div>
 
@@ -80,7 +80,7 @@ export function SearchFilters({
           <AccordionContent>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] text-muted">类型</span>
+                <span className="text-meta text-muted">类型</span>
                 {SELECTABLE.map((kind) => {
                   const active = kinds.includes(kind);
                   return (
@@ -93,7 +93,7 @@ export function SearchFilters({
                         )
                       }
                       className={cn(
-                        'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                        'rounded-md border px-2.5 py-1 text-meta font-medium transition-colors',
                         active
                           ? 'border-accent/40 bg-accent/10 text-accent'
                           : 'border-line bg-elevated text-muted hover:text-ink',
@@ -107,7 +107,7 @@ export function SearchFilters({
 
               <label
                 className={cn(
-                  'flex items-center gap-2 text-[11px]',
+                  'flex items-center gap-2 text-meta',
                   aiEnabled ? 'text-muted' : 'cursor-not-allowed text-muted/50',
                 )}
                 title={aiEnabled ? '启用语义检索' : '语义检索需要 AI Runtime，当前未启用'}

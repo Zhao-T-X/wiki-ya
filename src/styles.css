@@ -89,13 +89,15 @@ body {
 }
 
 @layer components {
-  /* 页面标题与说明的统一排版。 */
+  /* 页面标题与说明的统一排版（PR-07 §6）。
+     标题从 text-xl(20px) 提到 24px：此前页面标题与卡片里的 Section 标题
+     视觉重量接近，页面缺少「我现在在哪个模块」的锚点。 */
   .wy-page-title {
-    @apply text-xl font-semibold tracking-tight text-ink;
+    @apply text-2xl font-semibold tracking-tight text-ink;
   }
 
   .wy-page-subtitle {
-    @apply mt-1 text-sm text-muted;
+    @apply mt-1.5 max-w-reading text-sm leading-relaxed text-muted;
   }
 
   /* 极克制的分隔线。 */

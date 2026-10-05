@@ -103,7 +103,7 @@ export function SearchBar({
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-muted">
+        <span className="text-meta text-muted">
           {askMode
             ? '答案由模型生成，可能出错——每条结论都应能点开来源核对。'
             : '只查本地索引，不调用模型。'}

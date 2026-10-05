@@ -75,12 +75,12 @@ export function ActivityPanel() {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">运行记录</h2>
+        <h2 className="text-meta font-semibold uppercase tracking-wider text-muted">运行记录</h2>
         {loading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
       </div>
 
       {!loading && runs.length === 0 ? (
-        <p className="text-[11px] text-muted/80">
+        <p className="text-meta text-muted/80">
           还没有抽取任务。在文档里点「分析知识」，或用「捕获」自动抽取后会出现在这里。
         </p>
       ) : null}
@@ -146,7 +146,7 @@ const ActivityItem = memo(function ActivityItem({ run, titles }: ActivityItemPro
             <Badge tone={tone}>{STATUS_LABEL[run.status] ?? run.status}</Badge>
             <span className="truncate text-sm text-ink">{title}</span>
           </div>
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-meta leading-relaxed text-muted">
             {running && run.stage ? `${STAGE_LABEL[run.stage] ?? run.stage}` : null}
             {run.totalChunks > 0 ? ` · ${run.processedChunks}/${run.totalChunks} 块` : null}
             {!running && run.candidatesFound > 0 ? ` · ${run.candidatesFound} 候选` : null}
@@ -156,14 +156,14 @@ const ActivityItem = memo(function ActivityItem({ run, titles }: ActivityItemPro
         </div>
         <Link
           to={`/documents/${run.documentId}`}
-          className="shrink-0 text-[11px] text-accent hover:underline"
+          className="shrink-0 text-meta text-accent hover:underline"
           onClick={(event) => event.stopPropagation()}
         >
           查看
         </Link>
       </button>
       {expanded && trace.data ? (
-        <div className="mt-2 space-y-1 border-t border-line pt-2 text-[11px] text-muted">
+        <div className="mt-2 space-y-1 border-t border-line pt-2 text-meta text-muted">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-muted/70">{run.id.slice(0, 8)}</span>
             <span>{trace.data.actor || trace.data.runType}</span>

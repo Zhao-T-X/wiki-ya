@@ -80,7 +80,7 @@ export function TimelinePage() {
                     <span className="truncate text-sm text-ink">{item.title}</span>
                   </div>
                   {item.detail ? (
-                    <p className="mt-0.5 truncate text-[11px] text-muted">{item.detail}</p>
+                    <p className="mt-0.5 truncate text-meta text-muted">{item.detail}</p>
                   ) : null}
                 </div>
                 <span className="shrink-0 text-[10px] text-muted/70">{formatAt(item.at)}</span>

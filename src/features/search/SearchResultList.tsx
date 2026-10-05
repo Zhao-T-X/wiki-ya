@@ -71,13 +71,13 @@ export function SearchResultList({
   return (
     <div className="space-y-4">
       {/* 检索元信息：Level 3，压成一行灰字。 */}
-      <p className="text-[11px] text-muted">
+      <p className="text-meta text-muted">
         {response?.total ?? hits.length} 条 · 用时 {formatTookMs(response?.tookMs ?? 0)}
         {response?.method ? ` · ${response.method}` : ''}
       </p>
 
       {response?.notice ? (
-        <p className="rounded-md border border-line bg-elevated/60 px-3 py-2 text-[11px] leading-relaxed text-muted">
+        <p className="rounded-md border border-line bg-elevated/60 px-3 py-2 text-meta leading-relaxed text-muted">
           {response.notice}
         </p>
       ) : null}

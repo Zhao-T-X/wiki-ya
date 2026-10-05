@@ -56,7 +56,7 @@ export function EvidenceList({ evidence, emptyText = '暂无证据引用。', sh
             <p className="mt-2 text-xs text-muted">该证据未存储引文，需回原文查看。</p>
           )}
 
-          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted">
             <span>来源文档</span>
             {item.documentId ? (
               <Link

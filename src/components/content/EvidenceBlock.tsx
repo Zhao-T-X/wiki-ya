@@ -69,7 +69,7 @@ export function EvidenceBlock({
         <MarkdownContent mode="compact">{quote}</MarkdownContent>
       </blockquote>
 
-      <figcaption className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 pl-3 text-[11px] text-muted">
+      <figcaption className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 pl-3 text-meta text-muted">
         {sourceTitle ? (
           path ? (
             <Link to={path} className="truncate text-xs text-accent hover:underline">
@@ -99,7 +99,7 @@ export function EvidenceBlock({
         {tracePath ? (
           <Link
             to={tracePath}
-            className="ml-auto shrink-0 text-[11px] text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+            className="ml-auto shrink-0 text-meta text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
           >
             查看溯源 →
           </Link>

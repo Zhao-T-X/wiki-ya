@@ -82,7 +82,7 @@ export function MarkdownContent({
     <div
       className={cn(
         'text-ink/90',
-        compact ? 'max-h-32 overflow-hidden text-[13px] leading-relaxed' : 'text-reading',
+        compact ? 'max-h-32 overflow-hidden text-secondary leading-relaxed' : 'text-reading',
         className,
       )}
     >
@@ -178,7 +178,7 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
     ),
     ol: ({ children, ...props }: React.ComponentPropsWithoutRef<'ol'>) => (
       <ol
-        className="my-2 list-decimal space-y-1 pl-5 marker:font-mono marker:text-[11px] marker:text-muted"
+        className="my-2 list-decimal space-y-1 pl-5 marker:font-mono marker:text-meta marker:text-muted"
         {...props}
       >
         {children}
@@ -198,7 +198,7 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
 
     table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
       <div className="my-3 overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]" {...props}>
+        <table className="w-full border-collapse text-secondary" {...props}>
           {children}
         </table>
       </div>

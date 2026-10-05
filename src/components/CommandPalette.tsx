@@ -167,7 +167,7 @@ export function CommandPalette() {
                       </Badge>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm text-ink">{hit.title}</span>
-                        <span className="mt-0.5 block truncate text-[11px] text-muted">{hit.snippet}</span>
+                        <span className="mt-0.5 block truncate text-meta text-muted">{hit.snippet}</span>
                       </span>
                       <span className="shrink-0 font-mono text-[10px] text-muted">{formatScore(hit.score)}</span>
                     </button>

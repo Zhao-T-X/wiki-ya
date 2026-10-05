@@ -98,7 +98,7 @@ export function DocumentDetailPage() {
 
       {data ? (
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted">
             <Badge tone="accent">{data.document.sourceType}</Badge>
             <span>{data.document.chunkCount} 个片段</span>
             <span className="text-line">·</span>
@@ -122,7 +122,7 @@ export function DocumentDetailPage() {
             </section>
 
             <section className="space-y-3">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">
                 Chunks（{data.chunks.length}）
               </h3>
               <ul className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
@@ -134,7 +134,7 @@ export function DocumentDetailPage() {
                         {chunk.startOffset}–{chunk.endOffset}
                       </span>
                     </div>
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+                    <p className="mt-1.5 text-meta leading-relaxed text-muted">
                       {truncate(chunk.content, 120)}
                     </p>
                     <p className="mt-1 text-[10px] text-muted/70">{formatChars(chunk.charCount)}</p>
@@ -145,7 +145,7 @@ export function DocumentDetailPage() {
           </div>
 
           <section>
-            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <h3 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
               Claims（{data.claims.length}）
             </h3>
             <ClaimList

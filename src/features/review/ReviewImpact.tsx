@@ -19,13 +19,13 @@ export function ReviewImpact({ item }: { item: ReviewItem }) {
   return (
     <div className="space-y-2">
       <Card tone="quiet" className="p-3">
-        <p className="text-[13px] leading-relaxed text-ink/90">{item.impact}</p>
+        <p className="text-secondary leading-relaxed text-ink/90">{item.impact}</p>
       </Card>
 
       {supersedes ? (
         <Card tone="quiet" className="space-y-1.5 p-3">
-          <p className="text-[11px] uppercase tracking-wider text-muted">接受后</p>
-          <p className="flex items-start gap-2 text-[13px] leading-relaxed">
+          <p className="text-meta uppercase tracking-wider text-muted">接受后</p>
+          <p className="flex items-start gap-2 text-secondary leading-relaxed">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted" />
             <span className="text-muted">
               <Link to={`/claims/${relation.targetClaimId}`} className="hover:text-accent">
@@ -34,7 +34,7 @@ export function ReviewImpact({ item }: { item: ReviewItem }) {
               将进入历史知识（仍可在知识页查看，只是不再作为当前结论）
             </span>
           </p>
-          <p className="flex items-start gap-2 text-[13px] leading-relaxed">
+          <p className="flex items-start gap-2 text-secondary leading-relaxed">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
             <span>
               <Link to={`/claims/${relation.sourceClaimId}`} className="hover:text-accent">

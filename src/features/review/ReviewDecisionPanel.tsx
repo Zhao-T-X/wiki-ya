@@ -31,7 +31,7 @@ function Section({
 }) {
   return (
     <section className="space-y-1.5">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</h3>
+      <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">{title}</h3>
       {children}
     </section>
   );
@@ -71,24 +71,24 @@ export function ReviewDecisionPanel({
         <Section title="发生了什么">
           <div className="space-y-2">
             <Card tone="quiet" className="border-l-2 border-l-accent p-3">
-              <p className="text-[11px] uppercase tracking-wider text-accent">新知识</p>
+              <p className="text-meta uppercase tracking-wider text-accent">新知识</p>
               <p className="mt-1 text-body leading-relaxed text-ink">{relation.sourceText}</p>
               <Link
                 to={`/claims/${relation.sourceClaimId}`}
-                className="mt-1.5 inline-block text-[11px] text-accent hover:underline"
+                className="mt-1.5 inline-block text-meta text-accent hover:underline"
               >
                 查看详情
               </Link>
             </Card>
 
-            <div className="flex justify-center text-[11px] text-muted">vs</div>
+            <div className="flex justify-center text-meta text-muted">vs</div>
 
             <Card tone="quiet" className="border-l-2 border-l-muted/50 p-3">
-              <p className="text-[11px] uppercase tracking-wider text-muted">已有知识</p>
+              <p className="text-meta uppercase tracking-wider text-muted">已有知识</p>
               <p className="mt-1 text-body leading-relaxed text-ink/90">{relation.targetText}</p>
               <Link
                 to={`/claims/${relation.targetClaimId}`}
-                className="mt-1.5 inline-block text-[11px] text-accent hover:underline"
+                className="mt-1.5 inline-block text-meta text-accent hover:underline"
               >
                 查看详情
               </Link>
@@ -99,8 +99,8 @@ export function ReviewDecisionPanel({
         {/* ② 为什么：item.why 与 relation.reason 合并展示，避免重复 */}
         <Section title="为什么需要你决定">
           <Card tone="quiet" className="p-3">
-            <p className="text-[13px] leading-relaxed text-ink/90">{item.whatChanged}</p>
-            <p className="mt-2 text-[13px] leading-relaxed text-muted">{item.why}</p>
+            <p className="text-secondary leading-relaxed text-ink/90">{item.whatChanged}</p>
+            <p className="mt-2 text-secondary leading-relaxed text-muted">{item.why}</p>
           </Card>
         </Section>
 

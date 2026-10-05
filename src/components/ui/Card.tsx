@@ -37,7 +37,7 @@ export function Card({ tone, className, children }: CardProps) {
   return <div className={cn(cardVariants({ tone }), className)}>{children}</div>;
 }
 
-/** 卡片标题区：18px/600 起步，替代此前满屏的 `text-[11px] font-semibold uppercase`。 */
+/** 卡片标题区：18px/600 起步，替代此前满屏的 `text-meta font-semibold uppercase`。 */
 export function CardHeader({
   title,
   hint,

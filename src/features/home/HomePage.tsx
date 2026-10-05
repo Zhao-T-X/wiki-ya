@@ -267,7 +267,7 @@ export function HomePage() {
                   </option>
                 ))}
               </Select>
-              <span className="flex-1 text-[11px] text-muted">
+              <span className="flex-1 text-meta text-muted">
                 相同内容只会保留一份，不会产生副本。
               </span>
               <Button type="submit" variant="primary" loading={submitting} disabled={submitting}>
@@ -332,7 +332,7 @@ export function HomePage() {
                 </div>
 
                 {!aiEnabled ? (
-                  <p className="mt-2 text-[11px] text-muted/80">
+                  <p className="mt-2 text-meta text-muted/80">
                     未配置 AI，因此不做自动抽取。你仍可在文档详情手动录入知识。
                   </p>
                 ) : null}
@@ -392,7 +392,7 @@ export function HomePage() {
       {/* ③ 系统的待办：不需要用户主动进入某个模块 */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">需要你处理</h2>
+          <h2 className="text-meta font-semibold uppercase tracking-wider text-muted">需要你处理</h2>
           {sectionLoading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
         </div>
 
@@ -415,7 +415,7 @@ export function HomePage() {
                     <Badge tone="warn">{relationshipLabel(item.relation.relationship)}</Badge>
                     <span className="truncate text-sm text-ink">{item.whatChanged}</span>
                   </div>
-                  <p className="text-[11px] leading-relaxed text-muted">{item.impact}</p>
+                  <p className="text-meta leading-relaxed text-muted">{item.impact}</p>
                 </div>
                 <Button size="sm" variant="secondary" onClick={() => navigate('/review')}>
                   处理
@@ -432,7 +432,7 @@ export function HomePage() {
       {/* ④ 最近文档 */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">最近文档</h2>
+          <h2 className="text-meta font-semibold uppercase tracking-wider text-muted">最近文档</h2>
           {sectionLoading ? <Spinner className="h-3.5 w-3.5 text-muted" /> : null}
         </div>
 

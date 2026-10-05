@@ -49,7 +49,7 @@ export function SourceCard({ source, highlighted, className }: SourceCardProps) 
           <span className="truncate text-xs text-ink">{source.title}</span>
         )}
       </div>
-      <p className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-muted">
+      <p className="mt-1 whitespace-pre-wrap break-words text-meta leading-relaxed text-muted">
         {source.snippet}
       </p>
     </div>

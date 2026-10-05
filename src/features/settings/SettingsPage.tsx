@@ -82,7 +82,7 @@ function ChipList({ items }: { items: string[] }) {
 function RegistrySection({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="mb-5 last:mb-0">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+      <p className="mb-2 text-meta font-semibold uppercase tracking-wider text-muted">
         {title} <span className="font-normal text-muted/60">（{items.length}）</span>
       </p>
       <ChipList items={items} />
@@ -98,7 +98,7 @@ function RegistryContent({ tab, registries }: { tab: RegistryTabId; registries: 
           {registries.entityTypes.map((type) => (
             <li key={type.value} className="rounded-lg border border-line bg-canvas px-3 py-2">
               <p className="font-mono text-xs text-ink">{type.value}</p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-muted">{type.description}</p>
+              <p className="mt-0.5 text-meta leading-relaxed text-muted">{type.description}</p>
             </li>
           ))}
         </ul>
@@ -320,7 +320,7 @@ export function SettingsPage() {
       <PageHeader title="Settings" subtitle="AI 配置、外观与系统状态。不确定的选项可以先不管，默认值即可用。" />
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">应用信息</h2>
+        <h2 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">应用信息</h2>
         {appInfo.error ? <ErrorNotice error={appInfo.error} /> : null}
         {appInfo.loading && !info ? (
           <div className="flex items-center gap-2 text-xs text-muted">
@@ -371,25 +371,25 @@ export function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <h2 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
           AI 运行时
         </h2>
 
         {aiSettings.error ? <ErrorNotice error={aiSettings.error} /> : null}
 
         <Card className="space-y-4 p-5">
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-meta leading-relaxed text-muted">
             配置后即可自动抽取知识、回答问题、做语义检索。不配置也能正常使用全部本地功能。
           </p>
 
           {/* ---------- 对话模型 ---------- */}
           <div className="space-y-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">
               对话模型
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-medium text-muted">模型</span>
+                <span className="text-meta font-medium text-muted">模型</span>
                 <Input
                   value={aiForm.model}
                   onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
@@ -398,7 +398,7 @@ export function SettingsPage() {
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-medium text-muted">API Key</span>
+                <span className="text-meta font-medium text-muted">API Key</span>
                 <Input
                   type="password"
                   value={aiForm.apiKey}
@@ -412,7 +412,7 @@ export function SettingsPage() {
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-medium text-muted">接口基址</span>
+                <span className="text-meta font-medium text-muted">接口基址</span>
                 <Input
                   value={aiForm.baseUrl}
                   onChange={(e) => setAiForm((f) => ({ ...f, baseUrl: e.target.value }))}
@@ -421,7 +421,7 @@ export function SettingsPage() {
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-medium text-muted">上下文预算（token）</span>
+                <span className="text-meta font-medium text-muted">上下文预算（token）</span>
                 <Input
                   type="number"
                   min={256}
@@ -440,7 +440,7 @@ export function SettingsPage() {
           {/* ---------- 向量模型（PERF-10：与对话彻底分开）---------- */}
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">
                 向量模型
               </h3>
               <Badge tone={aiForm.embeddingLocal ? 'ok' : 'accent'}>
@@ -483,7 +483,7 @@ export function SettingsPage() {
             {aiForm.embeddingLocal ? (
               <div className="space-y-2">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium text-muted">模型</span>
+                  <span className="text-meta font-medium text-muted">模型</span>
                   <Select
                     value={aiForm.embeddingModel}
                     onChange={(e) =>
@@ -510,7 +510,7 @@ export function SettingsPage() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5 sm:col-span-2">
-                  <span className="text-[11px] font-medium text-muted">模型名</span>
+                  <span className="text-meta font-medium text-muted">模型名</span>
                   <Input
                     value={aiForm.embeddingModel}
                     onChange={(e) =>
@@ -519,12 +519,12 @@ export function SettingsPage() {
                     placeholder="text-embedding-3-small"
                     autoComplete="off"
                   />
-                  <span className="text-[11px] text-muted">
+                  <span className="text-meta text-muted">
                     各服务商命名不同，填该家文档里的模型名即可。
                   </span>
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium text-muted">接口基址</span>
+                  <span className="text-meta font-medium text-muted">接口基址</span>
                   <Input
                     value={aiForm.embeddingBaseUrl}
                     onChange={(e) =>
@@ -533,12 +533,12 @@ export function SettingsPage() {
                     placeholder={aiForm.baseUrl || 'https://api.openai.com/v1'}
                     autoComplete="off"
                   />
-                  <span className="text-[11px] text-muted">
+                  <span className="text-meta text-muted">
                     留空则复用上方对话基址。
                   </span>
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-medium text-muted">API Key</span>
+                  <span className="text-meta font-medium text-muted">API Key</span>
                   <Input
                     type="password"
                     value={aiForm.embeddingApiKey}
@@ -553,7 +553,7 @@ export function SettingsPage() {
                     autoComplete="off"
                   />
                 </label>
-                <p className="text-[11px] leading-relaxed text-muted sm:col-span-2">
+                <p className="text-meta leading-relaxed text-muted sm:col-span-2">
                   当前实际会请求：
                   <code className="mx-1">
                     {(aiForm.embeddingBaseUrl.trim() || aiForm.baseUrl || '（未配置）') +
@@ -565,7 +565,7 @@ export function SettingsPage() {
               </div>
             )}
 
-            <p className="text-[11px] leading-relaxed text-muted">
+            <p className="text-meta leading-relaxed text-muted">
               切换向量模型后，全部条目会重新向量化一次（一次性成本，之后回到稳态）。
             </p>
           </div>
@@ -587,10 +587,10 @@ export function SettingsPage() {
                 清除对话 API Key
               </Button>
             ) : null}
-            {aiSaved ? <span className="text-[11px] text-ok">已保存</span> : null}
+            {aiSaved ? <span className="text-meta text-ok">已保存</span> : null}
           </div>
 
-          <p className="text-[11px] leading-relaxed text-muted">
+          <p className="text-meta leading-relaxed text-muted">
             当前状态：
             <Badge tone={info?.aiEnabled ? 'ok' : 'neutral'} className="mx-1">
               {info?.aiEnabled ? 'AI 已启用' : 'AI 未启用'}
@@ -601,7 +601,7 @@ export function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">外观</h2>
+        <h2 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">外观</h2>
         <Card className="flex items-center justify-between px-4 py-3">
           <span className="text-xs text-muted">主题</span>
           <div className="flex gap-2">
@@ -624,7 +624,7 @@ export function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">Knowledge Health</h2>
+        <h2 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">Knowledge Health</h2>
         {health.error ? <ErrorNotice error={health.error} /> : null}
         {report ? (
           <>
@@ -636,7 +636,7 @@ export function SettingsPage() {
               <Stat label="证据" value={report.totalEvidence} />
             </div>
 
-            <p className="mb-2 mt-5 text-[11px] text-muted">点击指标可跳转到 Review 并带上对应筛选。</p>
+            <p className="mb-2 mt-5 text-meta text-muted">点击指标可跳转到 Review 并带上对应筛选。</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               {HEALTH_METRICS.map((metric) => (
                 <Stat
@@ -655,10 +655,10 @@ export function SettingsPage() {
 
       <section>
         <details className="rounded-xl border border-line bg-surface px-4 py-3">
-          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-muted">
+          <summary className="cursor-pointer text-meta font-semibold uppercase tracking-wider text-muted">
             高级：受控词表（Ontology）
           </summary>
-          <p className="mb-3 mt-3 text-[11px] leading-relaxed text-muted">
+          <p className="mb-3 mt-3 text-meta leading-relaxed text-muted">
             复杂性归系统、不归 UI。词表只在排查问题时才用得到，这里只做只读浏览。
           </p>
 
@@ -673,7 +673,7 @@ export function SettingsPage() {
                     type="button"
                     onClick={() => setTab(item.id)}
                     className={cn(
-                      'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                      'rounded-md border px-2.5 py-1 text-meta font-medium transition-colors',
                       tab === item.id
                         ? 'border-accent/40 bg-accent/10 text-accent'
                         : 'border-line bg-elevated text-muted hover:text-ink',
@@ -694,7 +694,7 @@ export function SettingsPage() {
       </section>
 
       <section>
-        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <h3 className="mb-3 text-meta font-semibold uppercase tracking-wider text-muted">
           Agents（M12）
         </h3>
         <AgentManagerPanel />
@@ -726,13 +726,13 @@ function ModelFacts({
   const model = models?.find((m) => m.spec === current);
   if (!model) {
     return (
-      <p className="text-[11px] leading-relaxed text-muted">
+      <p className="text-meta leading-relaxed text-muted">
         {models ? null : '正在读取本机模型…'}
       </p>
     );
   }
   return (
-    <div className="rounded-lg border border-line bg-canvas px-3 py-2 text-[11px] leading-relaxed text-muted">
+    <div className="rounded-lg border border-line bg-canvas px-3 py-2 text-meta leading-relaxed text-muted">
       <p>
         <span className="font-mono">{model.repo}</span> · {model.dimensions} 维 · 上下文{' '}
         {model.maxTokens} token

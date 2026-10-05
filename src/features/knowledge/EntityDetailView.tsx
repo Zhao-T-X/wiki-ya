@@ -16,8 +16,8 @@ export interface EntityDetailViewProps {
 function SectionTitle({ children, hint }: { children: string; hint?: string }) {
   return (
     <div className="mb-3 flex items-baseline justify-between gap-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h3>
-      {hint ? <span className="text-[11px] text-muted/70">{hint}</span> : null}
+      <h3 className="text-meta font-semibold uppercase tracking-wider text-muted">{children}</h3>
+      {hint ? <span className="text-meta text-muted/70">{hint}</span> : null}
     </div>
   );
 }
@@ -57,7 +57,7 @@ export function EntityDetailView({ detail, onSelectEntity }: EntityDetailViewPro
         {entity.description ? (
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">{entity.description}</p>
         ) : null}
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted">
           <span>{entity.aliasCount} 个别名</span>
           <span className="text-line">·</span>
           <span>{entity.claimCount} 条 Claim</span>
@@ -100,7 +100,7 @@ export function EntityDetailView({ detail, onSelectEntity }: EntityDetailViewPro
                 >
                   {relation.sourceName}
                 </button>
-                <span className="font-mono text-[11px] text-accent">{relation.predicate}</span>
+                <span className="font-mono text-meta text-accent">{relation.predicate}</span>
                 <span className="text-muted">→</span>
                 <button
                   type="button"

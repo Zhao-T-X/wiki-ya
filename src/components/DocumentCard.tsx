@@ -22,7 +22,7 @@ export function DocumentCard({ doc, onOpen }: DocumentCardProps) {
         <h3 className="truncate text-sm font-medium text-ink">{doc.title}</h3>
         <Badge>{doc.sourceType}</Badge>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-muted">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted">
         <span>{formatRelativeTime(doc.createdAt)}</span>
         <span className="text-line">·</span>
         <span>{doc.chunkCount} 个片段</span>

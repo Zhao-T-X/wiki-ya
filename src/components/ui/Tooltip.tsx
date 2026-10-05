@@ -32,7 +32,7 @@ export function TooltipContent({
         sideOffset={sideOffset}
         className={cn(
           'z-50 max-w-xs rounded-lg border border-line bg-elevated px-2.5 py-1.5',
-          'text-[11px] leading-relaxed text-ink shadow-xl',
+          'text-meta leading-relaxed text-ink shadow-xl',
           'data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95',
           className,
         )}
