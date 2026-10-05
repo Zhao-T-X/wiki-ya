@@ -184,6 +184,10 @@ pub struct RelationCard {
 pub struct GraphNode {
     pub id: String,
     pub name: String,
+    /// 序列化为 `type`（不是 `typeName`）：`type` 是 TS 保留字但**做字段名没问题**，
+    /// 且 `ipc.ts` 与 docs/IPC契约.md 声明的都是 `type`。
+    /// 不能靠 `rename_all` 达成（`type_name` → `typeName` ≠ `type`），只能字段级 rename。
+    #[serde(rename = "type")]
     pub type_name: String,
     pub status: String,
     pub depth: i64,

@@ -111,8 +111,14 @@ export function formatCompressionRatio(ratio: number | null | undefined): string
   return `${ratio.toFixed(2)}x`;
 }
 
-/** 截断长文本，保留可读边界。 */
-export function truncate(text: string, max = 160): string {
+/**
+ * 截断长文本，保留可读边界。
+ *
+ * 与 `formatCompressionRatio` 同一条策略：入参缺失时显示 `—` 而**不抛错**。
+ * `.length` / `.slice` 遇到 undefined 会抛，而抛在渲染期就是整页白屏。
+ */
+export function truncate(text: string | null | undefined, max = 160): string {
+  if (typeof text !== 'string') return '—';
   if (text.length <= max) return text;
   return `${text.slice(0, max).trimEnd()}…`;
 }
@@ -123,8 +129,9 @@ export function formatTookMs(ms: number): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-/** 谓词展示：`trained_on` → `trained on`。 */
-export function humanizePredicate(predicate: string): string {
+/** 谓词展示：`trained_on` → `trained on`。缺失时给 `—`，不抛（`.replace` 同上）。 */
+export function humanizePredicate(predicate: string | null | undefined): string {
+  if (typeof predicate !== 'string') return '—';
   return predicate.replace(/_/g, ' ');
 }
 

@@ -449,7 +449,6 @@ export interface ExtractionRunDto {
   costUsd?: number;
 }
 
-/** 后台运行实时事件（经 Tauri 频道 `extraction-events` 推送）。 */
 // ---------------------------------------------------------------------------
 // 1.9 统一 Run 事件（M1，频道 `run-events`）
 // ---------------------------------------------------------------------------
@@ -657,15 +656,6 @@ export interface MigrationReport {
 export interface MigrationInput {
   sourcePath: string;
 }
-
-/** Agent 运行事件（TDD §53，与 Rust `AppEvent` 逐字段对齐，snake_case tag）。 */
-export type AgentEvent =
-  | { type: 'agent_started'; run_id: string; agent: string }
-  | { type: 'agent_thinking'; run_id: string; text: string }
-  | { type: 'token_delta'; run_id: string; delta: string }
-  | { type: 'tool_called'; run_id: string; tool: string; arguments: unknown }
-  | { type: 'tool_completed'; run_id: string; tool: string; ok: boolean; summary: string }
-  | { type: 'agent_finished'; run_id: string; status: string };
 
 /** Agent Profile（M4）：Agent 的声明式配置。 */
 export interface AgentProfile {
