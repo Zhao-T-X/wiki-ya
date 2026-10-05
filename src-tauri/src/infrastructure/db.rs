@@ -134,7 +134,13 @@ pub fn apply_migrations(conn: &mut Connection) -> AppResult<i64> {
     let mut applied = current;
     for (version, sql) in MIGRATIONS {
         if *version > current {
-            tx.execute_batch(sql)?;
+            // 迁移失败必须能一眼看出**是哪一条**：SQLite 的报错只给 SQL 片段与
+            // 字节偏移（"no such column: embedding ... at offset 154"），
+            // 缺了版本号就等于让人猜。这次真实故障（0014 撞上历史 schema 的
+            // dims/embedding_blob 列名）就是这样排查出来的。
+            tx.execute_batch(sql).map_err(|err| {
+                AppError::Database(format!("迁移 {version} 执行失败：{err}"))
+            })?;
             tx.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?1)",
                 [version],
@@ -331,6 +337,69 @@ pub(crate) mod tests {
             assert_eq!(apply_migrations(&mut conn).unwrap(), SCHEMA_VERSION);
         }
         cleanup_db_files(&path);
+    }
+
+    /// 迁移链必须容忍**历史 schema 的列名漂移**（真实故障回归）。
+    ///
+    /// 背景：`chunk_embeddings` 在早期 schema 里的列名是 `dims` /
+    /// `embedding_blob`，而 0002 用的是 `CREATE TABLE IF NOT EXISTS` +
+    /// `embedding` / `dimensions`——对**已存在**的表它不生效，所以从旧 schema
+    /// 升上来的库会一直停在旧列名上。0014 曾在搬迁旧向量时按新列名写
+    /// `INSERT ... SELECT`，于是在真实库上直接 `no such column: embedding`，
+    /// **应用无法启动**（错误发生在 Tauri setup 回调的 ObjC 栈上，panic 直接
+    /// abort，用户只看到一屏 Rust 栈）。
+    ///
+    /// 为什么从零建库的测试测不到：全新库走 0002 建出的就是新列名，列名天然
+    /// 对得上。所以这里必须**手工构造旧结构**才能复现。
+    #[test]
+    fn legacy_chunk_embeddings_columns_do_not_block_migrations() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_migrations(version) VALUES
+               (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13);
+             CREATE TABLE chunks (id TEXT PRIMARY KEY);
+             CREATE TABLE chunk_embeddings (
+               chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+               model   TEXT NOT NULL,
+               dims    INTEGER NOT NULL,
+               embedding_blob BLOB NOT NULL,
+               created_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             CREATE INDEX idx_embeddings_model ON chunk_embeddings(model);
+             CREATE INDEX idx_chunk_embeddings_model ON chunk_embeddings(model);
+             INSERT INTO chunks(id) VALUES ('c1');
+             INSERT INTO chunk_embeddings(chunk_id, model, dims, embedding_blob)
+               VALUES ('c1','text-embedding-3-small',3,X'0000FF');",
+        )
+        .unwrap();
+
+        let applied = apply_migrations(&mut conn)
+            .expect("历史列名的库也必须能走完迁移链，否则应用无法启动");
+        assert_eq!(applied, SCHEMA_VERSION);
+
+        // 新结构就位：复合主键 + 分段证据三列。
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('chunk_embeddings')")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        for expected in ["part", "segment_text", "char_start", "char_end"] {
+            assert!(
+                columns.iter().any(|c| c == expected),
+                "0014 之后必须有 `{expected}` 列，实际：{columns:?}"
+            );
+        }
+
+        // 旧向量**不搬运**（派生数据，重算即可）——这是本次修正的显式取舍。
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunk_embeddings", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0, "旧结构的向量不做跨列名搬运，应为空表待重算");
     }
 
     fn temp_db_path() -> std::path::PathBuf {
