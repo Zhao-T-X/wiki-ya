@@ -53,7 +53,15 @@ impl CompletionRequest {
             user,
             json_mode: false,
             temperature: 0.3,
-            max_tokens: 1024,
+            // 与 `structured` 同理：reasoning 与最终答案**共享**这一个上限。
+            // 这里曾写 1024，于是推理型模型（如 deepseek-flash）把预算全花在
+            // 思维链上，正文一个字都没轮到：`content 帧 0 个 / reasoning 2065
+            // 字符 / finish_reason=length`，问答直接失败。抽取路径早就为此调大
+            // 过预算，问答路径漏了。
+            //
+            // 提高 `max_tokens` **不增加成本**：它是上限而非预留，模型没输出的
+            // 部分不计费；允许更长的输出也不等于一定会输出更长。
+            max_tokens: 8192,
         }
     }
 }
@@ -779,7 +787,22 @@ impl Provider for OpenAiProvider {
                 reasoning_full.chars().count(),
                 crate::logging::clip_tail(&reasoning_full, 300)
             );
-            return Err(AppError::Internal("AI 流式响应为空".into()));
+            // 给出可执行的判断依据，而不是一句"响应为空"。
+            // `finish_reason=length` + 有 reasoning _content 是推理型模型的
+            // 典型指纹：预算被思维链吃光，正文根本没轮到。
+            let exhausted_budget =
+                finish_reason.as_deref() == Some("length") || !reasoning_full.trim().is_empty();
+            let hint = if exhausted_budget {
+                " 建议：这是推理型模型的典型症状（思维链耗尽输出预算）。\
+                 请在 Settings → AI 运行时把 Chat 模型换成**非推理模型**（如 \
+                 `deepseek-chat` / `gpt-4o-mini`）后重试。"
+            } else {
+                ""
+            };
+            return Err(AppError::Internal(format!(
+                "AI 流式响应为空（finish_reason={}）：模型没有返回任何正文。{hint}",
+                finish_reason.as_deref().unwrap_or("-")
+            )));
         }
 
         let usage = usage.unwrap_or_default();
