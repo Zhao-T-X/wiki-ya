@@ -9,7 +9,7 @@ use crate::AppState;
 
 /// 最近的研究任务历史（新→旧）。
 #[tauri::command]
-pub fn list_research_tasks(
+pub async fn list_research_tasks(
     state: State<'_, AppState>,
     input: Option<serde_json::Value>,
 ) -> Result<Vec<ResearchTaskCard>, AppError> {

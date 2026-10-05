@@ -11,14 +11,14 @@ use crate::AppState;
 
 /// 读取一条 Run 的完整 Trace（登记 + 类型相关明细）。
 #[tauri::command]
-pub fn get_run_trace(state: State<'_, AppState>, input: IdInput) -> Result<RunTraceDto, AppError> {
+pub async fn get_run_trace(state: State<'_, AppState>, input: IdInput) -> Result<RunTraceDto, AppError> {
     let conn = state.open()?;
     trace_service::get_trace(&conn, &input.id)
 }
 
 /// 读取一条 Claim 的完整溯源（M8：证据 / 候选 / Run / 演化）。
 #[tauri::command]
-pub fn get_claim_trace(
+pub async fn get_claim_trace(
     state: State<'_, AppState>,
     input: IdInput,
 ) -> Result<ClaimTraceDto, AppError> {

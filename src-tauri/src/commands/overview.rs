@@ -9,7 +9,7 @@ use crate::AppState;
 
 /// 首页冷加载所需的全部数据（聚合）。
 #[tauri::command]
-pub fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOverview, AppError> {
+pub async fn get_home_overview(state: State<'_, AppState>) -> Result<HomeOverview, AppError> {
     let conn = state.open()?;
     overview_service::home_overview(&conn, &state.db_path)
 }

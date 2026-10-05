@@ -13,7 +13,7 @@ use crate::AppState;
 
 /// 列出全部 Agent Profile。
 #[tauri::command]
-pub fn list_agent_profiles(state: State<'_, AppState>) -> Result<Vec<AgentProfile>, AppError> {
+pub async fn list_agent_profiles(state: State<'_, AppState>) -> Result<Vec<AgentProfile>, AppError> {
     let conn = state.open()?;
     agent_profile_service::list_profiles(&conn)
 }
@@ -31,7 +31,7 @@ pub async fn run_agent_profile(
 
 /// 创建 Agent Profile（M12：policy 上限 propose，结构上拿不到 MUTATE）。
 #[tauri::command]
-pub fn create_agent_profile(
+pub async fn create_agent_profile(
     state: State<'_, AppState>,
     input: AgentProfileInput,
 ) -> Result<(), AppError> {
@@ -41,7 +41,7 @@ pub fn create_agent_profile(
 
 /// 更新 Agent Profile（整体替换字段）。
 #[tauri::command]
-pub fn update_agent_profile(
+pub async fn update_agent_profile(
     state: State<'_, AppState>,
     input: AgentProfileInput,
 ) -> Result<(), AppError> {
@@ -51,7 +51,7 @@ pub fn update_agent_profile(
 
 /// 删除 Agent Profile（默认 Profile 不可删除，重启会恢复出厂预置）。
 #[tauri::command]
-pub fn delete_agent_profile(state: State<'_, AppState>, input: IdInput) -> Result<(), AppError> {
+pub async fn delete_agent_profile(state: State<'_, AppState>, input: IdInput) -> Result<(), AppError> {
     let conn = state.open()?;
     agent_profile_crud::delete_profile(&conn, &input.id)
 }

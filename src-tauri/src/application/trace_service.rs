@@ -24,6 +24,10 @@ pub fn get_trace(conn: &Connection, run_id: &str) -> AppResult<RunTraceDto> {
     let run = run_repository::get(conn, run_id)?
         .ok_or_else(|| AppError::NotFound(format!("Run {run_id} 不存在")))?;
 
+    // PERF-09：配置只解析一次，同时供 extraction_run 与下面的成本估算复用
+    // （每次解析都要读 5~6 条 settings，其中 API Key 还要做一次 AES 解密）。
+    let cfg = AiConfig::from_settings(conn);
+
     let agent_steps = if run.run_type == RunType::Agent {
         agent_steps(conn, run_id)?
     } else {
@@ -33,8 +37,8 @@ pub fn get_trace(conn: &Connection, run_id: &str) -> AppResult<RunTraceDto> {
     let extraction_run = if run.run_type == RunType::Extraction {
         // 该 Run 一定有明细（同一 id 两处登记）。
         Some(extraction_service::to_dto(
-            conn,
             &extraction_run_repository::get(conn, run_id)?,
+            &cfg,
         )?)
     } else {
         None
@@ -45,7 +49,6 @@ pub fn get_trace(conn: &Connection, run_id: &str) -> AppResult<RunTraceDto> {
         .usage_json
         .as_ref()
         .and_then(|s| serde_json::from_str::<TokenUsage>(s).ok());
-    let cfg = AiConfig::from_settings(conn);
     let cost_usd = usage.and_then(|u| u.estimate_cost_usd(&cfg.model, &cfg.embedding_model));
 
     Ok(RunTraceDto {

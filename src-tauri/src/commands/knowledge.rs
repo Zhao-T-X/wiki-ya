@@ -13,7 +13,7 @@ use crate::AppState;
 
 /// 实体列表。
 #[tauri::command]
-pub fn list_entities(
+pub async fn list_entities(
     state: State<'_, AppState>,
     input: ListEntitiesInput,
 ) -> Result<Vec<EntityCard>, AppError> {
@@ -28,7 +28,7 @@ pub fn list_entities(
 
 /// 实体详情（别名 + Claim + 关系 + 邻域图）。
 #[tauri::command]
-pub fn get_entity(
+pub async fn get_entity(
     state: State<'_, AppState>,
     input: GetEntityInput,
 ) -> Result<EntityDetail, AppError> {
@@ -42,7 +42,7 @@ pub fn get_entity(
 
 /// Claim 列表。
 #[tauri::command]
-pub fn list_claims(
+pub async fn list_claims(
     state: State<'_, AppState>,
     input: ListClaimsInput,
 ) -> Result<Vec<ClaimCard>, AppError> {
@@ -60,14 +60,14 @@ pub fn list_claims(
 
 /// Claim 详情（证据 + 演化关系 + 历史）。
 #[tauri::command]
-pub fn get_claim(state: State<'_, AppState>, input: IdInput) -> Result<ClaimDetail, AppError> {
+pub async fn get_claim(state: State<'_, AppState>, input: IdInput) -> Result<ClaimDetail, AppError> {
     let conn = state.open()?;
     knowledge_service::get_claim(&conn, &ClaimId::from_raw(input.id.trim()))
 }
 
 /// 某条 Claim 的演化历史。
 #[tauri::command]
-pub fn get_claim_history(
+pub async fn get_claim_history(
     state: State<'_, AppState>,
     input: IdInput,
 ) -> Result<Vec<ClaimRelationCard>, AppError> {
@@ -77,7 +77,7 @@ pub fn get_claim_history(
 
 /// 手动录入 Claim（AI 关闭时的降级路径，领域校验与抽取路径同源）。
 #[tauri::command]
-pub fn create_claim(
+pub async fn create_claim(
     state: State<'_, AppState>,
     input: CreateClaimInput,
 ) -> Result<ClaimCard, AppError> {
@@ -87,7 +87,7 @@ pub fn create_claim(
 
 /// 某条 Claim 的证据。
 #[tauri::command]
-pub fn list_evidence(
+pub async fn list_evidence(
     state: State<'_, AppState>,
     input: ListEvidenceInput,
 ) -> Result<Vec<EvidenceCard>, AppError> {

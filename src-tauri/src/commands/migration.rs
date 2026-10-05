@@ -11,7 +11,7 @@ use crate::AppState;
 
 /// 只读探测存量库：报告可迁移的表与数量。
 #[tauri::command]
-pub fn probe_migration(
+pub async fn probe_migration(
     state: State<'_, AppState>,
     input: MigrationInput,
 ) -> Result<MigrationProbe, AppError> {
@@ -21,7 +21,7 @@ pub fn probe_migration(
 
 /// 备份当前库并从存量库导入（documents → claims，幂等可重跑）。
 #[tauri::command]
-pub fn run_migration(
+pub async fn run_migration(
     state: State<'_, AppState>,
     input: MigrationInput,
 ) -> Result<MigrationReport, AppError> {

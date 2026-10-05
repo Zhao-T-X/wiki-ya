@@ -73,15 +73,20 @@ pub fn create_run(conn: &Connection, document_id: &str) -> AppResult<String> {
 /// 读取一条 Run 的快照。
 pub fn get_run(conn: &Connection, id: &str) -> AppResult<ExtractionRunDto> {
     let run = extraction_run_repository::get(conn, id)?;
-    to_dto(conn, &run)
+    to_dto(&run, &AiConfig::from_settings(conn))
 }
 
 /// 最近的 Run（新→旧）。
 pub fn list_runs(conn: &Connection, limit: usize) -> AppResult<Vec<ExtractionRunDto>> {
     let runs = extraction_run_repository::list_recent(conn, limit)?;
+    // PERF-09：AI 配置只解析**一次**。`AiConfig::from_settings` 每次都要读
+    // 5~6 条 settings，其中 API Key 还要做一次 AES-256-GCM **解密**；逐行
+    // 解析等于把这份开销乘以行数（Activity 每 400ms 刷 12 行、文档页挂载
+    // 时拉 50 行）。配置在整个查询期间不会变，读一次就够。
+    let config = AiConfig::from_settings(conn);
     runs.iter()
         .map(|run| {
-            let mut dto = to_dto(conn, run)?;
+            let mut dto = to_dto(run, &config)?;
             // 列表不需要 `result_json`（它是含全部抽取 Claim 的完整报告）：
             // 列表只用于 Activity/首页概览，逐条带上会成倍放大 IPC 体积
             // （Activity 每次 Run 事件都会整表刷新）。需要详情时走
@@ -173,7 +178,7 @@ fn mark_failed(db_path: &PathBuf, run_id: &str, err: &AppError) {
     }
 }
 
-pub(crate) fn to_dto(conn: &Connection, run: &ExtractionRun) -> AppResult<ExtractionRunDto> {
+pub(crate) fn to_dto(run: &ExtractionRun, config: &AiConfig) -> AppResult<ExtractionRunDto> {
     // PR-04：从序列化的 ExtractionReport 里取出真实 token 账本，并据当前
     // AI 配置估算成本（未知模型返回 null，不编造价格）。
     let usage = run
@@ -182,7 +187,6 @@ pub(crate) fn to_dto(conn: &Connection, run: &ExtractionRun) -> AppResult<Extrac
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
         .and_then(|v| v.get("usage").cloned())
         .and_then(|u| serde_json::from_value::<TokenUsage>(u).ok());
-    let config = AiConfig::from_settings(conn);
     let cost_usd = usage.and_then(|u| u.estimate_cost_usd(&config.model, &config.embedding_model));
     Ok(ExtractionRunDto {
         id: run.id.clone(),

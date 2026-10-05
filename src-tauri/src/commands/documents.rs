@@ -15,7 +15,7 @@ use crate::AppState;
 
 /// 捕获一份文档：存原文 + 确定性切分（不调用任何 AI）。
 #[tauri::command]
-pub fn create_document(
+pub async fn create_document(
     state: State<'_, AppState>,
     input: CreateDocumentInput,
 ) -> Result<DocumentSummary, AppError> {
@@ -25,7 +25,7 @@ pub fn create_document(
 
 /// 文档列表。
 #[tauri::command]
-pub fn list_documents(
+pub async fn list_documents(
     state: State<'_, AppState>,
     input: ListDocumentsInput,
 ) -> Result<Vec<DocumentSummary>, AppError> {
@@ -35,7 +35,7 @@ pub fn list_documents(
 
 /// 文档详情：原文 + 切片 + 由它贡献的知识。
 #[tauri::command]
-pub fn get_document(
+pub async fn get_document(
     state: State<'_, AppState>,
     input: IdInput,
 ) -> Result<DocumentDetail, AppError> {
@@ -45,7 +45,7 @@ pub fn get_document(
 
 /// 重建切片（原文不变）。
 #[tauri::command]
-pub fn reindex_document(
+pub async fn reindex_document(
     state: State<'_, AppState>,
     input: IdInput,
 ) -> Result<DocumentSummary, AppError> {

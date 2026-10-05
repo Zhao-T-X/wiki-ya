@@ -9,7 +9,7 @@ use crate::AppState;
 
 /// 最近的时间轴事件（Document / Claim / Relation / Research 聚合）。
 #[tauri::command]
-pub fn list_timeline(
+pub async fn list_timeline(
     state: State<'_, AppState>,
     input: Option<serde_json::Value>,
 ) -> Result<Vec<TimelineItem>, AppError> {

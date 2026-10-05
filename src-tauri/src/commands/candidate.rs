@@ -9,7 +9,7 @@ use crate::AppState;
 
 /// 按 Run **分页**列出候选（PERF-04：游标分页，首屏只 50 条）。
 #[tauri::command]
-pub fn list_candidates(
+pub async fn list_candidates(
     state: State<'_, AppState>,
     input: ListCandidatesInput,
 ) -> Result<CandidatePageDto, AppError> {
@@ -19,7 +19,7 @@ pub fn list_candidates(
 
 /// 用户决策一条候选：accept → 落库为 Claim + 演化分析；reject → 留痕。
 #[tauri::command]
-pub fn decide_candidate(
+pub async fn decide_candidate(
     state: State<'_, AppState>,
     input: DecideCandidateInput,
 ) -> Result<CandidateDto, AppError> {

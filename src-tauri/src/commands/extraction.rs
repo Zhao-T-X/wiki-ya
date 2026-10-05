@@ -42,7 +42,7 @@ pub async fn start_extraction(
 
 /// 读取一条 Run 的当前快照。
 #[tauri::command]
-pub fn get_extraction_run(
+pub async fn get_extraction_run(
     state: State<'_, AppState>,
     input: IdInput,
 ) -> Result<ExtractionRunDto, AppError> {
@@ -52,7 +52,7 @@ pub fn get_extraction_run(
 
 /// 列出最近的 Run（侧栏 Activity 用）。
 #[tauri::command]
-pub fn list_extraction_runs(
+pub async fn list_extraction_runs(
     state: State<'_, AppState>,
     input: Option<LimitInput>,
 ) -> Result<Vec<ExtractionRunDto>, AppError> {
@@ -63,7 +63,7 @@ pub fn list_extraction_runs(
 
 /// 取消一条还在跑的 Run。已终态则无操作。
 #[tauri::command]
-pub fn cancel_extraction(state: State<'_, AppState>, input: IdInput) -> Result<bool, AppError> {
+pub async fn cancel_extraction(state: State<'_, AppState>, input: IdInput) -> Result<bool, AppError> {
     let conn = state.open()?;
     extraction_service::cancel_run(&conn, &input.id)
 }

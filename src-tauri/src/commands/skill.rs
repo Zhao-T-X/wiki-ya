@@ -13,7 +13,7 @@ use crate::AppState;
 
 /// 枚举内置 Skill（名称 / 描述 / 权限 / 输入约定）。
 #[tauri::command]
-pub fn list_skills(state: State<'_, AppState>) -> Result<Vec<SkillDescriptorDto>, AppError> {
+pub async fn list_skills(state: State<'_, AppState>) -> Result<Vec<SkillDescriptorDto>, AppError> {
     let conn = state.open()?;
     skill_service::list_skills(&conn)
 }
@@ -37,7 +37,7 @@ pub async fn run_skill(
 
 /// 创建自定义 Skill（M11：强制只读，产不出候选/提案）。
 #[tauri::command]
-pub fn create_skill(state: State<'_, AppState>, input: CreateSkillInput) -> Result<(), AppError> {
+pub async fn create_skill(state: State<'_, AppState>, input: CreateSkillInput) -> Result<(), AppError> {
     let conn = state.open()?;
     skill_service::create_skill(
         &conn,
@@ -50,7 +50,7 @@ pub fn create_skill(state: State<'_, AppState>, input: CreateSkillInput) -> Resu
 
 /// 更新自定义 Skill：产生新版本（内置 Skill 拒绝）。
 #[tauri::command]
-pub fn update_skill(state: State<'_, AppState>, input: UpdateSkillInput) -> Result<i64, AppError> {
+pub async fn update_skill(state: State<'_, AppState>, input: UpdateSkillInput) -> Result<i64, AppError> {
     let conn = state.open()?;
     skill_service::update_skill(
         &conn,
@@ -63,7 +63,7 @@ pub fn update_skill(state: State<'_, AppState>, input: UpdateSkillInput) -> Resu
 
 /// 删除自定义 Skill（内置 Skill 拒绝）。
 #[tauri::command]
-pub fn delete_skill(state: State<'_, AppState>, input: IdInput) -> Result<(), AppError> {
+pub async fn delete_skill(state: State<'_, AppState>, input: IdInput) -> Result<(), AppError> {
     let conn = state.open()?;
     skill_service::delete_skill(&conn, &input.id)
 }

@@ -13,7 +13,7 @@ use crate::AppState;
 
 /// 应用元信息（版本、数据库路径、注册表指纹、AI 是否启用）。
 #[tauri::command]
-pub fn app_info(
+pub async fn app_info(
     state: State<'_, AppState>,
     input: Option<serde_json::Value>,
 ) -> Result<AppInfo, AppError> {
@@ -24,7 +24,7 @@ pub fn app_info(
 
 /// 全部受控词表。前端**不允许**硬编码枚举值。
 #[tauri::command]
-pub fn list_registries(
+pub async fn list_registries(
     _state: State<'_, AppState>,
     input: Option<serde_json::Value>,
 ) -> Result<Registries, AppError> {
@@ -34,7 +34,7 @@ pub fn list_registries(
 
 /// Knowledge Health —— 全部指标都是真实计数。
 #[tauri::command]
-pub fn knowledge_health(
+pub async fn knowledge_health(
     state: State<'_, AppState>,
     input: Option<serde_json::Value>,
 ) -> Result<HealthReport, AppError> {
@@ -45,7 +45,7 @@ pub fn knowledge_health(
 
 /// 读取 AI 运行时设置（不含明文 API Key，仅告知是否已配置）。
 #[tauri::command]
-pub fn get_settings(
+pub async fn get_settings(
     state: State<'_, AppState>,
     input: Option<serde_json::Value>,
 ) -> Result<AiSettings, AppError> {
@@ -56,7 +56,7 @@ pub fn get_settings(
 
 /// 更新 AI 运行时设置（API Key / Base URL / Chat 模型 / 向量模型）并回读。
 #[tauri::command]
-pub fn update_settings(
+pub async fn update_settings(
     state: State<'_, AppState>,
     input: UpdateAiSettings,
 ) -> Result<AiSettings, AppError> {

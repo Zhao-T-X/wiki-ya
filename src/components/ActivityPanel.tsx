@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/Badge';
@@ -61,8 +61,14 @@ export function ActivityPanel() {
   );
 
   // 任意统一 Run 事件都触发一次（节流后的）刷新：抽取/Agent/Skill 全部可见。
+  //
+  // PERF-09：只保留**真的会改变这张列表**的事件。
+  // - `tokenDelta`：Ask 的流式文本，逐 token 触发且与列表无关；
+  // - `toolCalled` / `toolCompleted`：Research 的中间步骤，列表里不显示。
+  // 两者都曾让整表按 400ms 节奏白刷一遍。
   useRunEvents(null, (event) => {
     if (event.kind === 'tokenDelta') return;
+    if (event.kind === 'toolCalled' || event.kind === 'toolCompleted') return;
     scheduleRefresh();
   });
 
@@ -88,14 +94,36 @@ export function ActivityPanel() {
   );
 }
 
-/** 单条运行记录：点击展开运行详情（get_run_trace，M13）。 */
-function ActivityItem({
-  run,
-  titles,
-}: {
+interface ActivityItemProps {
   run: ExtractionRunDto;
   titles: Record<string, string>;
-}) {
+}
+
+/**
+ * PERF-09：props 浅比较**故意不比对象身份**。
+ *
+ * 列表每 400ms 整表刷新一次，`setRuns` 拿到的每个 `run` 都是反序列化出来的新
+ * 对象，引用全不相等——默认的 `React.memo` 会因此判定"全都变了"，12 条全部
+ * 重渲染。但列表真正显示的只有 status / stage / processedChunks /
+ * totalChunks / candidatesFound / changesFound 这几个字段，其余（resultJson、
+ * usage、时间戳等）与渲染无关。
+ *
+ * 只比这六个字段：抽取期间通常只有正在跑的那一条在变，其余 11 条被跳过。
+ */
+function sameVisibleRun(a: ExtractionRunDto, b: ExtractionRunDto): boolean {
+  return (
+    a.id === b.id &&
+    a.status === b.status &&
+    a.stage === b.stage &&
+    a.processedChunks === b.processedChunks &&
+    a.totalChunks === b.totalChunks &&
+    a.candidatesFound === b.candidatesFound &&
+    a.changesFound === b.changesFound
+  );
+}
+
+/** 单条运行记录：点击展开运行详情（get_run_trace，M13）。 */
+const ActivityItem = memo(function ActivityItem({ run, titles }: ActivityItemProps) {
   const [expanded, setExpanded] = useState(false);
   const trace = useAsyncData(
     () => (expanded ? get_run_trace({ id: run.id }) : Promise.resolve(null)),
@@ -169,4 +197,5 @@ function ActivityItem({
       ) : null}
     </Card>
   );
-}
+},
+(prev, next) => prev.titles === next.titles && sameVisibleRun(prev.run, next.run));
