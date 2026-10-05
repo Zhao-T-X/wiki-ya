@@ -562,11 +562,19 @@ export interface AskResponse {
 // ---------------------------------------------------------------------------
 
 export interface AiSettings {
-  /** 是否已配置 API Key（不回显明文，出于安全） */
+  /** 对话 API Key 是否已配置（不回显明文，出于安全） */
   apiKeySet: boolean;
   baseUrl: string;
   model: string;
   embeddingModel: string;
+  /** 向量端点；空串表示复用 baseUrl（PERF-10） */
+  embeddingBaseUrl: string;
+  /** 向量 API Key 是否已单独配置；false 表示复用对话 Key 或未配置 */
+  embeddingApiKeySet: boolean;
+  /** 向量实际会打到哪个端点（已解析回退规则），供界面如实展示 */
+  embeddingEndpoint: string;
+  /** 向量走本机推理（embeddingModel 带 local: 前缀）时为 true */
+  embeddingLocal: boolean;
   /** Ask/Research 的上下文预算（token） */
   tokenBudget: number;
 }
@@ -577,7 +585,35 @@ export interface UpdateAiSettings {
   baseUrl?: string;
   model?: string;
   embeddingModel?: string;
+  /** 向量端点；传空字符串表示"复用对话基址" */
+  embeddingBaseUrl?: string;
+  /** 向量 API Key；传空字符串表示清除（清除后回退为复用对话 Key） */
+  embeddingApiKey?: string;
   tokenBudget?: number;
+}
+
+/**
+ * 本机可用的向量模型（PERF-10）。
+ *
+ * 维度 / 上下文上限 / 是否已下载**一律由后端给出**，前端不得硬编码——
+ * 否则模型登记表一改，界面就在撒谎。
+ */
+export interface LocalEmbeddingModel {
+  /** 模型名（`local:` 之后的部分） */
+  name: string;
+  /** 可直接填进「向量模型」的完整取值 */
+  spec: string;
+  dimensions: number;
+  /** 上下文上限（含 [CLS]/[SEP]） */
+  maxTokens: number;
+  /** 权重来源（HF 仓库） */
+  repo: string;
+  /** 权重是否已在本机缓存 */
+  downloaded: boolean;
+  /** 已下载权重占用（字节）；未下载为 0 */
+  weightBytes: number;
+  /** 下载量级提示（如「约 91 MB」）；已下载时为 undefined */
+  downloadHint?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -589,11 +589,18 @@ impl Provider for OpenAiProvider {
                 prompt_tokens: 0,
             });
         }
+        // PERF-10：向量侧端点 / 密钥与对话侧**独立**，留空才回退。
+        // 必要性：DeepSeek 等服务商只有 chat/completions，没有 /embeddings，
+        // 共用基址等于把向量化请求发给不支持的端点。
         let api_key = self
             .config
-            .api_key
-            .clone()
-            .ok_or_else(|| AppError::Internal("AI 未配置 API Key".into()))?;
+            .embedding_key()
+            .map(str::to_string)
+            .ok_or_else(|| AppError::Internal("未配置向量模型的 API Key".into()))?;
+        let endpoint = self.config.embedding_endpoint().trim().to_string();
+        if endpoint.is_empty() {
+            return Err(AppError::Internal("未配置向量模型的接口基址".into()));
+        }
 
         let body = EmbeddingRequest {
             model: self.config.embedding_model.clone(),
@@ -601,7 +608,7 @@ impl Provider for OpenAiProvider {
         };
 
         let client = shared_http_client();
-        let url = format!("{}/embeddings", self.config.base_url.trim_end_matches('/'));
+        let url = format!("{}/embeddings", endpoint.trim_end_matches('/'));
         let response = client
             .post(url)
             .bearer_auth(api_key)

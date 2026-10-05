@@ -155,6 +155,97 @@ pub fn supported_models() -> Vec<&'static str> {
     LOCAL_MODELS.iter().map(|m| m.name).collect()
 }
 
+/// 单个本地模型的对外元数据（设置页据此渲染，不在前端硬编码任何数字）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalModelInfo {
+    /// 模型名（`local:` 之后的部分）。
+    pub name: &'static str,
+    /// 可直接填进「向量模型」输入框的完整取值。
+    pub spec: String,
+    pub dimensions: usize,
+    /// 上下文上限（含 `[CLS]`/`[SEP]`）。
+    pub max_tokens: usize,
+    /// 权重来源（HF 仓库）。
+    pub repo: &'static str,
+    /// 权重是否已在本机缓存目录里。
+    pub downloaded: bool,
+    /// 已下载权重的磁盘占用（字节）；未下载为 0。
+    pub weight_bytes: u64,
+    /// 下载量级的人类可读提示（如 `约 91 MB`）；未下载时为 None。
+    pub download_hint: Option<String>,
+}
+
+/// 列出全部本地模型及其缓存状态。
+///
+/// 「是否已下载」是设置页最需要的信息：没下载的模型首次使用要联网拉 90MB，
+/// 用户点下去之前就该知道，而不是等检索时卡住。
+pub fn list_models() -> Vec<LocalModelInfo> {
+    LOCAL_MODELS
+        .iter()
+        .map(|model| {
+            let (downloaded, weight_bytes) = cache_weight_size(model.repo);
+            LocalModelInfo {
+                name: model.name,
+                spec: format!("{LOCAL_PREFIX}{}", model.name),
+                dimensions: model.dim,
+                max_tokens: model.max_tokens,
+                repo: model.repo,
+                downloaded,
+                weight_bytes,
+                download_hint: (!downloaded).then(|| weight_hint(model)),
+            }
+        })
+        .collect()
+}
+
+/// 估算某模型的下载量级（只用于提示，不是承诺）。
+///
+/// 数值来自 ONNX 权重的典型体积量级，允许偏差——文案里会写"约"。
+fn weight_hint(model: &LocalModel) -> String {
+    let mb = model.dim as u64 * 4 / 1024; // 粗略：参数量 ≈ 维度 × 4
+    let size = mb.clamp(20, 600);
+    format!("约 {size} MB")
+}
+
+/// HF 缓存里的仓库目录名：`Xenova/bge-small-zh-v1.5` → `models--Xenova--bge-small-zh-v1.5`。
+///
+/// **只把 `/` 换成 `--`，点号必须原样保留。** 早期版本顺手把 `.` 也替换了，
+/// 结果永远匹配不到已下载的权重，设置页把下好的模型显示成"需下载 91MB"。
+fn hf_cache_dir_name(repo: &str) -> String {
+    format!("models--{}", repo.replace('/', "--"))
+}
+
+/// 查某个 HF 仓库在缓存目录里的实际占用与是否完整。
+fn cache_weight_size(repo: &str) -> (bool, u64) {
+    let dir = cache_dir().join(hf_cache_dir_name(repo));
+    let snapshots = dir.join("snapshots");
+    if !snapshots.is_dir() {
+        return (false, 0);
+    }
+    // snapshots 下是符号链接（指回 blobs），递归统计**实体文件**大小，
+    // 直接累加 snapshots 会把同一份权重数两次（不对）。
+    let blobs = dir.join("blobs");
+    if !blobs.is_dir() {
+        return (false, 0);
+    }
+    let mut total = 0u64;
+    let mut files = 0usize;
+    for entry in std::fs::read_dir(&blobs).into_iter().flatten().flatten() {
+        if entry.path().extension().map(|e| e == "lock").unwrap_or(false) {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata() {
+            if meta.is_file() {
+                total += meta.len();
+                files += 1;
+            }
+        }
+    }
+    // 至少要有权重文件才算就绪；只有 .lock 说明下载没完成。
+    (files > 0, total)
+}
+
 /// 把设置里的取值解析成登记表项。
 fn resolve(spec: &str) -> AppResult<&'static LocalModel> {
     let name = parse_local_model(spec).ok_or_else(|| {
@@ -426,6 +517,57 @@ mod tests {
     #[test]
     fn embed_rejects_non_local_spec() {
         assert!(embed("text-embedding-3-small", &["x".to_string()]).is_err());
+    }
+
+    /// 设置页元数据：不能有硬编码数字错位（维度/上限必须与登记表一致）。
+    #[test]
+    fn model_listing_matches_the_registry() {
+        let list = list_models();
+        assert_eq!(list.len(), LOCAL_MODELS.len());
+        for info in &list {
+            let model = LOCAL_MODELS
+                .iter()
+                .find(|m| m.name == info.name)
+                .expect("列表项必须来自登记表");
+            assert_eq!(info.dimensions, model.dim);
+            assert_eq!(info.max_tokens, model.max_tokens);
+            assert_eq!(info.spec, format!("{LOCAL_PREFIX}{}", model.name));
+            // 没下载时不能谎报已就绪。
+            assert!(
+                info.downloaded || info.weight_bytes == 0,
+                "{} 未下载却报告了占用",
+                info.name
+            );
+        }
+    }
+
+    /// HF 缓存目录名推导：点号**必须保留**。
+    ///
+    /// 早期版本把 `.` 也换成 `--`，于是永远匹配不到已下载的权重，
+    /// 设置页把下好的模型显示成"需下载 91MB"。
+    #[test]
+    fn hf_cache_dir_name_keeps_dots() {
+        assert_eq!(
+            hf_cache_dir_name("Xenova/bge-small-zh-v1.5"),
+            "models--Xenova--bge-small-zh-v1.5"
+        );
+        // 每个登记在册的模型都能推出一个含点号的目录名（否则界面的"已下载"永不亮）。
+        for model in LOCAL_MODELS {
+            assert!(
+                hf_cache_dir_name(model.repo).ends_with(model.name),
+                "{} → {} 应以模型名结尾",
+                model.repo,
+                hf_cache_dir_name(model.repo)
+            );
+        }
+    }
+
+    /// 没有权重时必须诚实报 0，不能猜一个数字冒充已下载。
+    #[test]
+    fn missing_cache_reports_not_downloaded() {
+        let (downloaded, bytes) = cache_weight_size("Xenova/definitely-not-a-real-model-xyz");
+        assert!(!downloaded);
+        assert_eq!(bytes, 0);
     }
 
     /// 真实推理冒烟：会联网下载权重（约 90MB）并跑 ONNX，故默认忽略。

@@ -38,10 +38,25 @@ use rusqlite::Connection;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::settings_repository;
 
-/// 加密后的 API Key 在 `settings` 表中的键名。
+/// 命名密钥的基名（不含 `.enc` 后缀）。
+///
+/// 对话与向量的 API Key 是**两个独立机密**（可以一个用 DeepSeek、一个用硅基
+/// 流动），故存储层按「名字」区分：实际密文键为 `{name}.enc`。
+///
+/// `AI_API_KEY_NAME` 沿用历史键名 `ai.api_key`，因此**存量数据无需迁移**。
+pub const AI_API_KEY_NAME: &str = "ai.api_key";
+/// 向量 API Key 的基名（新功能，无存量明文）。
+pub const EMBEDDING_API_KEY_NAME: &str = "ai.embedding_api_key";
+
+/// 加密后的 API Key 在 `settings` 表中的键名（保留常量供既有调用方使用）。
 pub const KEY_API_KEY_ENC: &str = "ai.api_key.enc";
 /// 旧版明文键名。仅用于迁移与清理，**不再作为读取来源**。
 pub const KEY_API_KEY_LEGACY: &str = "ai.api_key";
+
+/// 某命名密钥的密文键名。
+fn enc_key(name: &str) -> String {
+    format!("{name}.enc")
+}
 /// 主密钥文件名（位于应用数据目录，权限 0600）。
 pub const KEY_FILE_NAME: &str = "secret.key";
 
@@ -245,22 +260,56 @@ pub fn load_api_key(conn: &Connection) -> AppResult<Option<String>> {
     }
 }
 
-/// 便于测试注入加密器的读写实现。
-pub fn save_api_key_with(
+// ---------------------------------------------------------------------------
+// 命名密钥（对话 / 向量各自一把）
+// ---------------------------------------------------------------------------
+
+/// 保存任意命名密钥；`name` 形如 `ai.embedding_api_key`。
+///
+/// 只删同名明文行——**不会**碰别的密钥的历史明文（那是各自的责任）。
+pub fn save_named_secret(
     conn: &Connection,
-    cipher: &SecretCipher,
+    name: &str,
     plaintext: &str,
 ) -> AppResult<()> {
-    let token = cipher.encrypt(plaintext)?;
-    settings_repository::set_setting(conn, KEY_API_KEY_ENC, &token)?;
-    // 同一把 Key 只保留一份，避免遗留明文。
-    settings_repository::delete_setting(conn, KEY_API_KEY_LEGACY)?;
+    save_named_secret_with(conn, require_cipher()?, name, plaintext)
+}
+
+/// 读取任意命名密钥。语义与 [`load_api_key`] 一致（未配置 / 未就绪 → `None`）。
+pub fn load_named_secret(conn: &Connection, name: &str) -> AppResult<Option<String>> {
+    match CIPHER.get() {
+        Some(cipher) => load_named_secret_with(conn, cipher, name),
+        None => Ok(None),
+    }
+}
+
+/// 清除任意命名密钥（幂等）：密文行与同名明文行都删掉。
+pub fn clear_named_secret(conn: &Connection, name: &str) -> AppResult<()> {
+    settings_repository::delete_setting(conn, &enc_key(name))?;
+    settings_repository::delete_setting(conn, name)?;
     Ok(())
 }
 
-/// 便于测试注入加密器的读取实现。
-pub fn load_api_key_with(conn: &Connection, cipher: &SecretCipher) -> AppResult<Option<String>> {
-    let Some(token) = settings_repository::get_setting(conn, KEY_API_KEY_ENC)? else {
+/// 测试注入版保存。
+pub fn save_named_secret_with(
+    conn: &Connection,
+    cipher: &SecretCipher,
+    name: &str,
+    plaintext: &str,
+) -> AppResult<()> {
+    let token = cipher.encrypt(plaintext)?;
+    settings_repository::set_setting(conn, &enc_key(name), &token)?;
+    settings_repository::delete_setting(conn, name)?;
+    Ok(())
+}
+
+/// 测试注入版读取。
+pub fn load_named_secret_with(
+    conn: &Connection,
+    cipher: &SecretCipher,
+    name: &str,
+) -> AppResult<Option<String>> {
+    let Some(token) = settings_repository::get_setting(conn, &enc_key(name))? else {
         return Ok(None);
     };
     let token = token.trim();
@@ -272,10 +321,24 @@ pub fn load_api_key_with(conn: &Connection, cipher: &SecretCipher) -> AppResult<
         Ok(key) if !key.trim().is_empty() => Ok(Some(key)),
         Ok(_) => Ok(None),
         Err(err) => {
-            crate::log_error!("API Key 解密失败，视为未配置：{err}");
+            crate::log_error!("命名密钥 `{name}` 解密失败，视为未配置：{err}");
             Ok(None)
         }
     }
+}
+
+/// 便于测试注入加密器的读写实现。
+pub fn save_api_key_with(
+    conn: &Connection,
+    cipher: &SecretCipher,
+    plaintext: &str,
+) -> AppResult<()> {
+    save_named_secret_with(conn, cipher, AI_API_KEY_NAME, plaintext)
+}
+
+/// 便于测试注入加密器的读取实现。
+pub fn load_api_key_with(conn: &Connection, cipher: &SecretCipher) -> AppResult<Option<String>> {
+    load_named_secret_with(conn, cipher, AI_API_KEY_NAME)
 }
 
 fn require_cipher() -> AppResult<&'static SecretCipher> {

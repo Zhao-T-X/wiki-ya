@@ -6,7 +6,9 @@
 
 use tauri::State;
 
-use crate::application::dto::{AiSettings, AppInfo, HealthReport, Registries, UpdateAiSettings};
+use crate::application::dto::{
+    AiSettings, AppInfo, HealthReport, LocalEmbeddingModels, Registries, UpdateAiSettings,
+};
 use crate::application::settings_service;
 use crate::error::AppError;
 use crate::AppState;
@@ -62,4 +64,17 @@ pub async fn update_settings(
 ) -> Result<AiSettings, AppError> {
     let mut conn = state.open()?;
     settings_service::update_ai_settings(&mut conn, input)
+}
+
+/// 列出本机可用的向量模型（PERF-10：设置页渲染下拉）。
+///
+/// 维度 / 上下文上限 / 是否已下载权重全部由后端给出——前端**不得**硬编码这些
+/// 数字，否则模型登记表一改，界面就在撒谎。
+#[tauri::command]
+pub async fn list_local_embedding_models(
+    _state: State<'_, AppState>,
+    input: Option<serde_json::Value>,
+) -> Result<LocalEmbeddingModels, AppError> {
+    let _ = input;
+    Ok(crate::ai::local_embedding::list_models())
 }

@@ -675,11 +675,19 @@ pub struct HomeOverview {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSettings {
-    /// 是否已配置 API Key（不回显明文）。
+    /// 对话 API Key 是否已配置（不回显明文）。
     pub api_key_set: bool,
     pub base_url: String,
     pub model: String,
     pub embedding_model: String,
+    /// 向量端点；**空串表示复用 `base_url`**（PERF-10）。
+    pub embedding_base_url: String,
+    /// 向量 API Key 是否已单独配置；`false` 表示复用对话 Key 或未配置。
+    pub embedding_api_key_set: bool,
+    /// 向量实际会打到哪个端点（已解析回退规则），供界面如实展示。
+    pub embedding_endpoint: String,
+    /// 本机推理（`local:` 前缀）时为 true：此时端点/密钥都不起作用。
+    pub embedding_local: bool,
     /// Ask/Research 的上下文预算（token）。
     pub token_budget: usize,
 }
@@ -698,9 +706,18 @@ pub struct UpdateAiSettings {
     pub model: Option<String>,
     #[serde(default)]
     pub embedding_model: Option<String>,
+    /// 向量端点（PERF-10）；传空字符串表示"复用对话基址"。
+    #[serde(default)]
+    pub embedding_base_url: Option<String>,
+    /// 向量 API Key；传空字符串表示显式清除（清除后回退复用对话 Key）。
+    #[serde(default)]
+    pub embedding_api_key: Option<String>,
     #[serde(default)]
     pub token_budget: Option<usize>,
 }
+
+/// 本机可用的向量模型（设置页渲染下拉用；数字一律来自后端，前端不硬编码）。
+pub type LocalEmbeddingModels = Vec<crate::ai::local_embedding::LocalModelInfo>;
 
 // ---------------------------------------------------------------------------
 // 2.1 Research 多步研究（Phase 6）

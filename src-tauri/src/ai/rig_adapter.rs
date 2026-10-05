@@ -255,6 +255,8 @@ mod tests {
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             embedding_model: "text-embedding-3-small".into(),
+            embedding_base_url: String::new(),
+            embedding_api_key: None,
             token_budget: 4000,
             enabled: true,
         }
@@ -299,6 +301,8 @@ mod tests {
                 .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
             model: std::env::var("WIKIYA_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into()),
             embedding_model: "text-embedding-3-small".into(),
+            embedding_base_url: String::new(),
+            embedding_api_key: None,
             token_budget: 4000,
             enabled: true,
         };
@@ -340,6 +344,8 @@ mod tests {
                 .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
             model: std::env::var("WIKIYA_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into()),
             embedding_model: "text-embedding-3-small".into(),
+            embedding_base_url: String::new(),
+            embedding_api_key: None,
             token_budget: 4000,
             enabled: true,
         };

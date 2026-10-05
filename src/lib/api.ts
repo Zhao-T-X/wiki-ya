@@ -38,6 +38,7 @@ import type {
   AskResponse,
   AiSettings,
   UpdateAiSettings,
+  LocalEmbeddingModel,
   ResearchReport,
   ResearchTaskCard,
   StartResearchInput,
@@ -147,6 +148,11 @@ export function get_settings(): Promise<AiSettings> {
 
 export function update_settings(input: UpdateAiSettings): Promise<AiSettings> {
   return call<AiSettings>('update_settings', input);
+}
+
+/** 本机可用的向量模型（设置页下拉；数字全部来自后端）。 */
+export function list_local_embedding_models(): Promise<LocalEmbeddingModel[]> {
+  return call<LocalEmbeddingModel[]>('list_local_embedding_models', {});
 }
 
 // ---------------------------------------------------------------------------

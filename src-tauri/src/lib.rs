@@ -164,6 +164,8 @@ pub fn run() {
             commands::settings::knowledge_health,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            // ---- 本地向量模型（PERF-10：设置页下拉）----
+            commands::settings::list_local_embedding_models,
             // ---- extraction run（EXTRACTION-001：异步抽取后台任务）----
             commands::extraction::start_extraction,
             commands::extraction::get_extraction_run,

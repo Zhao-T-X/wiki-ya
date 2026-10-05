@@ -62,9 +62,18 @@ pub fn get_ai_settings(conn: &Connection) -> AppResult<AiSettings> {
     let config = AiConfig::from_settings(conn);
     Ok(AiSettings {
         api_key_set: config.api_key.is_some(),
-        base_url: config.base_url,
-        model: config.model,
-        embedding_model: config.embedding_model,
+        base_url: config.base_url.clone(),
+        model: config.model.clone(),
+        embedding_model: config.embedding_model.clone(),
+        embedding_base_url: config.embedding_base_url.clone(),
+        // 只回显"是否单独配置"，绝不回显明文——与对话 Key 同一原则。
+        embedding_api_key_set: config
+            .embedding_api_key
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|key| !key.is_empty()),
+        embedding_endpoint: config.embedding_endpoint().to_string(),
+        embedding_local: crate::ai::local_embedding::is_local_spec(&config.embedding_model),
         token_budget: config.token_budget,
     })
 }
@@ -94,6 +103,20 @@ pub fn update_ai_settings(conn: &mut Connection, req: UpdateAiSettings) -> AppRe
     }
     if let Some(embedding_model) = req.embedding_model {
         settings_repository::set_setting(&tx, "ai.embedding_model", embedding_model.trim())?;
+    }
+    // PERF-10：向量端点允许存空串（= 复用对话基址），故这里**不能**跳过空值。
+    if let Some(embedding_base_url) = req.embedding_base_url {
+        settings_repository::set_setting(&tx, "ai.embedding_base_url", embedding_base_url.trim())?;
+    }
+    // 向量 API Key 与对话 Key 同等对待：AES-256-GCM 加密，绝不落明文。
+    // 空字符串 = 显式清除（清除后自动回退为「复用对话 Key」）。
+    if let Some(embedding_api_key) = req.embedding_api_key {
+        let trimmed = embedding_api_key.trim();
+        if trimmed.is_empty() {
+            secrets::clear_named_secret(&tx, secrets::EMBEDDING_API_KEY_NAME)?;
+        } else {
+            secrets::save_named_secret(&tx, secrets::EMBEDDING_API_KEY_NAME, trimmed)?;
+        }
     }
     if let Some(token_budget) = req.token_budget {
         settings_repository::set_setting(&tx, "ai.token_budget", &token_budget.to_string())?;

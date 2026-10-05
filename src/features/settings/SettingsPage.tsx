@@ -8,12 +8,14 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
 import { Stat } from '@/components/ui/Stat';
 import {
   app_info,
   get_settings,
   knowledge_health,
+  list_local_embedding_models,
   list_registries,
   update_settings,
   WikiError,
@@ -21,6 +23,7 @@ import {
 import { cn } from '@/lib/cn';
 import { AgentManagerPanel } from '@/features/settings/AgentManagerPanel';
 import { useAsyncData } from '@/lib/hooks';
+import type { LocalEmbeddingModel } from '@/types/ipc';
 import type { Tone } from '@/lib/status';
 import { useUiStore } from '@/stores/ui';
 import type { HealthReport, Registries, UpdateAiSettings } from '@/types/ipc';
@@ -179,7 +182,18 @@ export function SettingsPage() {
   const registries = useAsyncData(() => list_registries(), []);
 
   const aiSettings = useAsyncData(() => get_settings(), []);
-  const [aiForm, setAiForm] = useState({ apiKey: '', baseUrl: '', model: '', embeddingModel: '', tokenBudget: '' });
+  // PERF-10：本地模型元数据由后端给出（维度 / 上限 / 是否已下载），前端不硬编码。
+  const localModels = useAsyncData(() => list_local_embedding_models(), []);
+  const [aiForm, setAiForm] = useState({
+    apiKey: '',
+    baseUrl: '',
+    model: '',
+    embeddingModel: '',
+    embeddingBaseUrl: '',
+    embeddingApiKey: '',
+    embeddingLocal: false,
+    tokenBudget: '',
+  });
   const [aiSaving, setAiSaving] = useState(false);
   const [aiSaved, setAiSaved] = useState(false);
   const [aiError, setAiError] = useState<WikiError | null>(null);
@@ -192,10 +206,40 @@ export function SettingsPage() {
         baseUrl: aiSettings.data.baseUrl,
         model: aiSettings.data.model,
         embeddingModel: aiSettings.data.embeddingModel,
+        embeddingBaseUrl: aiSettings.data.embeddingBaseUrl,
+        embeddingApiKey: '',
+        embeddingLocal: aiSettings.data.embeddingLocal,
         tokenBudget: String(aiSettings.data.tokenBudget),
       });
     }
   }, [aiSettings.data]);
+
+  /**
+   * 切换向量来源。
+   *
+   * 顺带把模型名换成该来源下合理的默认值，避免"来源=本机推理、模型名却还是
+   * text-embedding-3-small"这种自相矛盾的组合——那会让用户以为已经切到本机，
+   * 实际仍在往远程发请求。
+   */
+  function setEmbeddingSource(nextLocal: boolean) {
+    setAiForm((f) => {
+      if (f.embeddingLocal === nextLocal) return f;
+      const fallbackModel = nextLocal
+        ? (localModels.data?.find((m) => m.downloaded) ?? localModels.data?.[0])?.spec
+        : 'text-embedding-3-small';
+      return {
+        ...f,
+        embeddingLocal: nextLocal,
+        // 已经是对应来源的合法值就别覆盖（例如用户在自定义远程模型名）。
+        embeddingModel:
+          nextLocal === f.embeddingModel.startsWith('local:') && f.embeddingModel.trim()
+            ? f.embeddingModel
+            : (fallbackModel ?? ''),
+        // 切到本机推理就不需要端点与密钥了，清掉以免留下过期配置。
+        ...(nextLocal ? { embeddingBaseUrl: '', embeddingApiKey: '' } : {}),
+      };
+    });
+  }
 
   async function saveAiSettings() {
     setAiSaving(true);
@@ -206,12 +250,20 @@ export function SettingsPage() {
         apiKey: aiForm.apiKey.trim() || undefined,
         baseUrl: aiForm.baseUrl,
         model: aiForm.model,
+        // 本机推理：只提交模型名（本地推理不需要端点与密钥）。
         embeddingModel: aiForm.embeddingModel,
+        ...(aiForm.embeddingLocal
+          ? {}
+          : {
+              embeddingBaseUrl: aiForm.embeddingBaseUrl.trim(),
+              embeddingApiKey: aiForm.embeddingApiKey.trim() || undefined,
+            }),
         tokenBudget: aiForm.tokenBudget.trim() ? Number(aiForm.tokenBudget) : undefined,
       };
       await update_settings(payload);
-      setAiForm((form) => ({ ...form, apiKey: '' })); // 清空明文输入
+      setAiForm((form) => ({ ...form, apiKey: '', embeddingApiKey: '' })); // 清空明文输入
       aiSettings.reload();
+      localModels.reload();
       appInfo.reload(); // 即时刷新顶部的「AI 运行时」状态
       setAiSaved(true);
     } catch (cause: unknown) {
@@ -330,37 +382,35 @@ export function SettingsPage() {
             配置后即可自动抽取知识、回答问题、做语义检索。不配置也能正常使用全部本地功能。
           </p>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium text-muted">模型</span>
-              <Input
-                value={aiForm.model}
-                onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
-                placeholder="gpt-4o-mini"
-                autoComplete="off"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium text-muted">API Key</span>
-              <Input
-                type="password"
-                value={aiForm.apiKey}
-                onChange={(e) => setAiForm((f) => ({ ...f, apiKey: e.target.value }))}
-                placeholder={
-                  aiSettings.data?.apiKeySet
-                    ? '已配置（输入以替换，或点下方「清除」）'
-                    : '未配置，输入以保存'
-                }
-                autoComplete="off"
-              />
-            </label>
-          </div>
-
-          <details className="rounded-lg border border-line bg-canvas px-3 py-2">
-            <summary className="cursor-pointer text-[11px] font-medium text-muted">
-              高级（接口基址 / 向量模型 / 上下文预算）
-            </summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {/* ---------- 对话模型 ---------- */}
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              对话模型
+            </h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-muted">模型</span>
+                <Input
+                  value={aiForm.model}
+                  onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
+                  placeholder="gpt-4o-mini"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-muted">API Key</span>
+                <Input
+                  type="password"
+                  value={aiForm.apiKey}
+                  onChange={(e) => setAiForm((f) => ({ ...f, apiKey: e.target.value }))}
+                  placeholder={
+                    aiSettings.data?.apiKeySet
+                      ? '已配置（输入以替换，或点下方「清除」）'
+                      : '未配置，输入以保存'
+                  }
+                  autoComplete="off"
+                />
+              </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-medium text-muted">接口基址</span>
                 <Input
@@ -369,19 +419,6 @@ export function SettingsPage() {
                   placeholder="https://api.openai.com/v1"
                   autoComplete="off"
                 />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-medium text-muted">向量模型</span>
-                <Input
-                  value={aiForm.embeddingModel}
-                  onChange={(e) => setAiForm((f) => ({ ...f, embeddingModel: e.target.value }))}
-                  placeholder="text-embedding-3-small"
-                  autoComplete="off"
-                />
-                <span className="text-[11px] text-muted">
-                  填 <code>local:bge-small-zh-v1.5</code> 则走本机推理，不联网、不计费
-                  （首次使用需下载约 90MB 权重）。切换模型后全部条目会重新向量化一次。
-                </span>
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-medium text-muted">上下文预算（token）</span>
@@ -396,7 +433,142 @@ export function SettingsPage() {
                 />
               </label>
             </div>
-          </details>
+          </div>
+
+          <div className="border-t border-line" />
+
+          {/* ---------- 向量模型（PERF-10：与对话彻底分开）---------- */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                向量模型
+              </h3>
+              <Badge tone={aiForm.embeddingLocal ? 'ok' : 'accent'}>
+                {aiForm.embeddingLocal ? '本机推理' : '远程接口'}
+              </Badge>
+            </div>
+
+            {/* 来源选择器：先决定"谁来算"，再决定"用哪个模型"。 */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEmbeddingSource(true)}
+                className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                  aiForm.embeddingLocal
+                    ? 'border-accent bg-accent/10 text-ink'
+                    : 'border-line bg-canvas text-muted hover:text-ink'
+                }`}
+              >
+                <span className="block font-medium">本机推理</span>
+                <span className="mt-0.5 block text-[10px] leading-relaxed opacity-80">
+                  不联网、不计费 · 权重约 91MB
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmbeddingSource(false)}
+                className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                  !aiForm.embeddingLocal
+                    ? 'border-accent bg-accent/10 text-ink'
+                    : 'border-line bg-canvas text-muted hover:text-ink'
+                }`}
+              >
+                <span className="block font-medium">远程接口</span>
+                <span className="mt-0.5 block text-[10px] leading-relaxed opacity-80">
+                  需服务商支持 /embeddings
+                </span>
+              </button>
+            </div>
+
+            {aiForm.embeddingLocal ? (
+              <div className="space-y-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-muted">模型</span>
+                  <Select
+                    value={aiForm.embeddingModel}
+                    onChange={(e) =>
+                      setAiForm((f) => ({ ...f, embeddingModel: e.target.value }))
+                    }
+                  >
+                    {/* 自定义值不在列表里时也要能显示，否则 select 会显示空白 */}
+                    {(localModels.data ?? []).some((m) => m.spec === aiForm.embeddingModel) ||
+                    !aiForm.embeddingModel ? null : (
+                      <option value={aiForm.embeddingModel}>{aiForm.embeddingModel}（自定义）</option>
+                    )}
+                    {(localModels.data ?? []).map((m) => (
+                      <option key={m.name} value={m.spec}>
+                        {m.name} · {m.dimensions} 维 ·{' '}
+                        {m.downloaded
+                          ? `已下载 ${formatWeight(m.weightBytes)}`
+                          : `需下载 ${m.downloadHint ?? '权重'}`}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <ModelFacts models={localModels.data ?? undefined} current={aiForm.embeddingModel} />
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-[11px] font-medium text-muted">模型名</span>
+                  <Input
+                    value={aiForm.embeddingModel}
+                    onChange={(e) =>
+                      setAiForm((f) => ({ ...f, embeddingModel: e.target.value }))
+                    }
+                    placeholder="text-embedding-3-small"
+                    autoComplete="off"
+                  />
+                  <span className="text-[11px] text-muted">
+                    各服务商命名不同，填该家文档里的模型名即可。
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-muted">接口基址</span>
+                  <Input
+                    value={aiForm.embeddingBaseUrl}
+                    onChange={(e) =>
+                      setAiForm((f) => ({ ...f, embeddingBaseUrl: e.target.value }))
+                    }
+                    placeholder={aiForm.baseUrl || 'https://api.openai.com/v1'}
+                    autoComplete="off"
+                  />
+                  <span className="text-[11px] text-muted">
+                    留空则复用上方对话基址。
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-muted">API Key</span>
+                  <Input
+                    type="password"
+                    value={aiForm.embeddingApiKey}
+                    onChange={(e) =>
+                      setAiForm((f) => ({ ...f, embeddingApiKey: e.target.value }))
+                    }
+                    placeholder={
+                      aiSettings.data?.embeddingApiKeySet
+                        ? '已单独配置（输入以替换）'
+                        : '留空则复用上方对话 Key'
+                    }
+                    autoComplete="off"
+                  />
+                </label>
+                <p className="text-[11px] leading-relaxed text-muted sm:col-span-2">
+                  当前实际会请求：
+                  <code className="mx-1">
+                    {(aiForm.embeddingBaseUrl.trim() || aiForm.baseUrl || '（未配置）') +
+                      '/embeddings'}
+                  </code>
+                  。注意 DeepSeek 等服务商<b className="text-warn">只提供对话接口、没有
+                  /embeddings</b>，这类场景请切到本机推理或换一家。
+                </p>
+              </div>
+            )}
+
+            <p className="text-[11px] leading-relaxed text-muted">
+              切换向量模型后，全部条目会重新向量化一次（一次性成本，之后回到稳态）。
+            </p>
+          </div>
 
           {aiError ? <ErrorNotice error={aiError} /> : null}
 
@@ -412,7 +584,7 @@ export function SettingsPage() {
             </Button>
             {aiSettings.data?.apiKeySet ? (
               <Button type="button" variant="ghost" onClick={clearAiKey} disabled={aiSaving}>
-                清除 API Key
+                清除对话 API Key
               </Button>
             ) : null}
             {aiSaved ? <span className="text-[11px] text-ok">已保存</span> : null}
@@ -527,6 +699,53 @@ export function SettingsPage() {
         </h3>
         <AgentManagerPanel />
       </section>
+    </div>
+  );
+}
+/** 字节数 → 人类可读（设置页展示权重占用）。 */
+function formatWeight(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1) return `${mb.toFixed(0)} MB`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+/**
+ * 本机向量模型的事实说明（PERF-10）。
+ *
+ * 维度 / 上下文上限 / 权重大小全部来自后端登记表——前端硬编码这些数字，
+ * 等于模型表一改就在骗人。
+ */
+function ModelFacts({
+  models,
+  current,
+}: {
+  models?: LocalEmbeddingModel[];
+  current: string;
+}) {
+  const model = models?.find((m) => m.spec === current);
+  if (!model) {
+    return (
+      <p className="text-[11px] leading-relaxed text-muted">
+        {models ? null : '正在读取本机模型…'}
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-line bg-canvas px-3 py-2 text-[11px] leading-relaxed text-muted">
+      <p>
+        <span className="font-mono">{model.repo}</span> · {model.dimensions} 维 · 上下文{' '}
+        {model.maxTokens} token
+      </p>
+      <p className="mt-1">
+        {model.downloaded ? (
+          <>权重已在本机（{formatWeight(model.weightBytes)}），推理不联网、不产生 API 费用。</>
+        ) : (
+          <>
+            权重尚未下载（{model.downloadHint ?? '体积未知'}），首次使用时会自动下载。
+          </>
+        )}
+      </p>
     </div>
   );
 }
