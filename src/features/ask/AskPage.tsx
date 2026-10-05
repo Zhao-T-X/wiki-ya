@@ -199,6 +199,13 @@ export function AskPage() {
                         <Badge tone="neutral" className="shrink-0">
                           {source.kind}
                         </Badge>
+                        {/* PERF-07：引文只来自该 chunk 的其中一段，必须如实标注，
+                            否则会让人误以为看到了整块原文。 */}
+                        {source.part !== undefined ? (
+                          <Badge tone="warn" className="shrink-0" title="该切片超出嵌入模型上下文，引文为其中一段">
+                            第 {source.part + 1} 段
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="mt-1.5 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-muted">
                         {source.snippet}

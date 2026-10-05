@@ -528,6 +528,9 @@ export interface AskSource {
   id: string;
   title: string;
   snippet: string;
+  /** PERF-07：引文取自 chunk 的第几段（undefined = 未切分，即整块）。
+   *  非空时 UI 必须标注段号——引文只是原 chunk 的一部分。 */
+  part?: number;
 }
 
 export interface ContextStats {

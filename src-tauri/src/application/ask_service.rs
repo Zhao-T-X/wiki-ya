@@ -101,6 +101,8 @@ pub fn ask(
                 strategy: LoadStrategy::Load,
                 source_id: p.source_id.clone(),
                 title: Some(p.title.clone()),
+                // PERF-07：段号 > 0 说明这是长 chunk 切出的一段。
+                part: (p.part > 0).then_some(p.part),
             }
         })
         .collect();
@@ -215,6 +217,7 @@ pub fn ask(
             id: item.id.clone(),
             title: item.title.clone().unwrap_or_default(),
             snippet: item.content.clone(),
+            part: item.part,
         })
         .collect();
 

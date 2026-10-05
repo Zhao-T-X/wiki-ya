@@ -58,6 +58,10 @@ pub struct ContextItem {
     pub strategy: LoadStrategy,
     pub source_id: Option<String>,
     pub title: Option<String>,
+    /// PERF-07：命中的是来源 chunk 的第几段（`None` = 未切分）。
+    /// `content` 只含**这一段**，UI 需据此标注，避免让人误以为是整块。
+    #[serde(default)]
+    pub part: Option<usize>,
 }
 
 /// 上下文预算：模型上下文窗口里能留给检索内容的上限。
@@ -285,6 +289,7 @@ mod tests {
             strategy: LoadStrategy::Load,
             source_id: None,
             title: None,
+            part: None,
         }
     }
 

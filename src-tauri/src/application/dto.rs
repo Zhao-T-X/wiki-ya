@@ -614,6 +614,10 @@ pub struct AskSource {
     pub id: String,
     pub title: String,
     pub snippet: String,
+    /// PERF-07：`snippet` 取自 chunk 的第几段（`None` = 未切分，即整块）。
+    /// 非空时 UI **必须**标注段号——引文只是原 chunk 的一部分。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub part: Option<usize>,
 }
 
 /// 一次问答的诚实结果。
