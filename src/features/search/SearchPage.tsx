@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { app_info, ask, search, WikiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { formatScore, formatTookMs, newRunId } from '@/lib/format';
+import { formatCompressionRatio, formatScore, formatTookMs, newRunId } from '@/lib/format';
 import { useAsyncData } from '@/lib/hooks';
 import { hitTarget } from '@/lib/links';
 import { searchKindLabel } from '@/lib/status';
@@ -266,8 +266,10 @@ export function SearchPage() {
                     上下文统计
                   </summary>
                   <p className="mt-2 font-mono text-[10px] text-muted">
-                    tokens {answer.contextStats.loadedTokens}/{answer.contextStats.totalTokens} · items{' '}
-                    {answer.contextStats.itemCount} · 压缩 {answer.contextStats.compressionRatio.toFixed(2)}x
+                    tokens {answer.contextStats.loadedTokens ?? '—'}/
+                    {answer.contextStats.totalTokens ?? '—'} · items{' '}
+                    {answer.contextStats.itemCount ?? '—'} · 压缩{' '}
+                    {formatCompressionRatio(answer.contextStats.compressionRatio)}
                     {answer.contextStats.truncated ? ' · 已截断' : ''}
                   </p>
                 </details>

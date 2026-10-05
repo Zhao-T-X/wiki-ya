@@ -82,7 +82,17 @@ pub struct ContextPack {
 }
 
 /// 透明的上下文统计（供 Ask 的「Context Stats」面板审计）。
+///
+/// **这里必须 camelCase**：本结构是 `context` 模块里**唯一跨 IPC 边界**的——
+/// 它嵌在 `AskResponse.context_stats` 里，前端 `ipc.ts` 按 camelCase 读取。
+/// 同模块的 `ContextItem` / `ContextPack` 不过 IPC（内部 + 缓存），保持
+/// snake_case 无妨。
+///
+/// 代价：本结构也嵌在 `ContextPack.stats` 里，故加此属性会让**已有上下文缓存
+/// 反序列化失败**——`ask_service` 对此已有降级（失败即重新 compile），所以只是
+/// 缓存失效一次，不会报错。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContextStats {
     pub total_tokens: usize,
     pub loaded_tokens: usize,
@@ -278,6 +288,7 @@ pub fn compile(mut items: Vec<ContextItem>, budget: &Budget) -> ContextPack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn item(id: &str, content: &str, cost: usize, priority: f32) -> ContextItem {
         ContextItem {
@@ -414,6 +425,77 @@ mod tests {
         let pack = compile(items, &Budget { max_tokens: 1000 });
         assert_eq!(pack.stats.compression_ratio, 1.0);
         assert!(!pack.truncated);
+    }
+
+    /// IPC 契约回归：`ContextStats` 必须序列化成 camelCase。
+    ///
+    /// 真实故障：本结构漏了 `rename_all`，实际发出去的是 `compression_ratio`，
+    /// 而前端按 camelCase 读 —— 于是 `answer.contextStats.compressionRatio` 是
+    /// `undefined`，Search 页 `.toFixed()` 直接把整页渲染打崩。
+    /// TypeScript 声明与 Rust 序列化不一致编译器发现不了，只能在这里钉住。
+    #[test]
+    fn stats_serialize_as_camel_case_for_ipc() {
+        let stats = ContextStats {
+            total_tokens: 100,
+            loaded_tokens: 80,
+            item_count: 3,
+            truncated: false,
+            compression_ratio: 1.25,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+
+        for (key, expected) in [
+            ("totalTokens", json!(100)),
+            ("loadedTokens", json!(80)),
+            ("itemCount", json!(3)),
+            ("truncated", json!(false)),
+            ("compressionRatio", json!(1.25)),
+        ] {
+            assert_eq!(json[key], expected, "字段 {key} 必须以 camelCase 出现");
+        }
+        assert!(
+            json.get("compression_ratio").is_none(),
+            "snake_case 字段名不得再出现（会让前端读到 undefined）"
+        );
+
+        // 缓存往返：ContextPack 内嵌 stats，改名后旧缓存会反序列化失败
+        // （ask_service 已按"失败即重新 compile"降级，这里只保证新格式能读回）。
+        let back: ContextStats = serde_json::from_value(json).unwrap();
+        assert_eq!(back.compression_ratio, 1.25);
+        assert_eq!(back.item_count, 3);
+    }
+
+    /// 端到端：`AskResponse.context_stats` 这条路径上的**嵌套**字段也必须 camelCase。
+    ///
+    /// 只测 `ContextStats` 本身不够——`AskResponse` 有 rename_all，但 serde 的
+    /// rename_all **不递归**到嵌套结构，正是这里出的问题。
+    #[test]
+    fn ask_response_context_stats_are_camel_case() {
+        let response = crate::application::dto::AskResponse {
+            question: "q".into(),
+            answer: "a".into(),
+            enabled: true,
+            note: None,
+            sources: Vec::new(),
+            context_stats: Some(ContextStats {
+                total_tokens: 100,
+                loaded_tokens: 80,
+                item_count: 3,
+                truncated: true,
+                compression_ratio: 1.25,
+            }),
+            agent_run_id: None,
+            usage: None,
+            cost_usd: None,
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            json["contextStats"]["compressionRatio"],
+            json!(1.25),
+            "前端正是读 answer.contextStats.compressionRatio"
+        );
+        assert_eq!(json["contextStats"]["loadedTokens"], json!(80));
+        assert_eq!(json["contextStats"]["truncated"], json!(true));
     }
 
     #[test]

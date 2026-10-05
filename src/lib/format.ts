@@ -95,6 +95,22 @@ export function formatPercent(ratio: number | null | undefined): string {
   return `${Math.round(ratio * 100)}%`;
 }
 
+/**
+ * 上下文压缩比，如 `1.25x`。
+ *
+ * **绝不能在这里 `.toFixed()` 一个可能缺失的值**：真实故障是
+ * `ContextStats` 漏了 `rename_all`，实际发来的是 `compression_ratio`，前端读
+ * camelCase 得到 `undefined`，`.toFixed()` 抛错把整页渲染打崩（React 错误
+ * 边界只能显示"页面无法正常渲染 / 刷新页面"）。
+ *
+ * 后端已修（`ai/context` 的 `ContextStats` 加 camelCase），这里仍兜底：
+ * 数值缺失只该让**一个数字**显示为 `—`，不该让整个页面崩掉。
+ */
+export function formatCompressionRatio(ratio: number | null | undefined): string {
+  if (typeof ratio !== 'number' || !Number.isFinite(ratio)) return '—';
+  return `${ratio.toFixed(2)}x`;
+}
+
 /** 截断长文本，保留可读边界。 */
 export function truncate(text: string, max = 160): string {
   if (text.length <= max) return text;

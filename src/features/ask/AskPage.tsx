@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/PageHeader';
 import { app_info, ask, get_run_trace, WikiError } from '@/lib/api';
-import { newRunId } from '@/lib/format';
+import { formatCompressionRatio, newRunId } from '@/lib/format';
 import { useRunEvents } from '@/lib/useRunEvents';
 import { useAsyncData } from '@/lib/hooks';
 import type { AskResponse, AskSource } from '@/types/ipc';
@@ -248,15 +248,6 @@ export function AskPage() {
       </div>
     </div>
   );
-}
-
-/**
- * 诚实兜底：旧版后端的 ContextStats 可能没有 compressionRatio 字段
- * （IPC 契约演进期的运行时数据），缺省按 1.0 展示，绝不让 UI 崩溃。
- */
-function formatCompressionRatio(value: number | undefined): string {
-  const ratio = typeof value === 'number' && Number.isFinite(value) ? value : 1;
-  return `${ratio.toFixed(2)}x`;
 }
 
 function ContextStat({ label, value }: { label: string; value: number | string }) {
