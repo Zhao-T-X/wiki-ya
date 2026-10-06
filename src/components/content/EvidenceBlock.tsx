@@ -64,12 +64,13 @@ export function EvidenceBlock({
         className,
       )}
     >
-      {/* 引文：走 MarkdownContent compact，这样引文里的 `code` 与强调也是渲染过的 */}
-      <blockquote className="border-l-2 border-accent/40 pl-3 text-sm leading-relaxed text-ink/85">
+      {/* 引文：主内容，走 MarkdownContent compact（任务书 PR-07.1 T7）。
+          与下方 Source/Chunk/Support 用一条分隔线拉开层次——引文是主角，其余是辅助上下文。 */}
+      <blockquote className="border-l-2 border-accent/40 pl-3 text-secondary leading-relaxed text-ink/90">
         <MarkdownContent mode="compact">{quote}</MarkdownContent>
       </blockquote>
 
-      <figcaption className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 pl-3 text-meta text-muted">
+      <figcaption className="mt-0 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line/60 pl-3 pt-2.5 text-meta text-muted">
         {sourceTitle ? (
           path ? (
             <Link to={path} className="truncate text-xs text-accent hover:underline">

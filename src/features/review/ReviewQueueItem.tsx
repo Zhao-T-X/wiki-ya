@@ -30,11 +30,11 @@ export function ReviewQueueItem({
       onClick={() => onSelect(relation.id)}
       aria-current={selected}
       className={cn(
-        'w-full rounded-lg border px-3 py-2.5 text-left transition-colors',
+        'w-full border-l-2 px-3 py-2.5 text-left transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
         selected
-          ? 'border-accent/50 bg-accent/5'
-          : 'border-transparent hover:border-line hover:bg-elevated/60',
+          ? 'border-l-accent bg-accent/5'
+          : 'border-l-transparent hover:bg-elevated/50',
       )}
     >
       <div className="flex items-center gap-2">
@@ -43,12 +43,10 @@ export function ReviewQueueItem({
         </Badge>
       </div>
 
-      <p className="mt-1.5 line-clamp-2 text-secondary leading-relaxed text-ink/90">
+      <p className="mt-1 line-clamp-2 text-body font-medium leading-snug text-ink">
         {relation.sourceText}
       </p>
-      <p className="mt-0.5 line-clamp-2 text-secondary leading-relaxed text-muted">
-        {relation.targetText}
-      </p>
+      <p className="mt-0.5 line-clamp-1 text-meta leading-relaxed text-muted">vs {relation.targetText}</p>
     </button>
   );
 }

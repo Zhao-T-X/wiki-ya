@@ -67,32 +67,36 @@ export function ReviewDecisionPanel({
           <StatusBadge status={relation.status} />
         </div>
 
-        {/* ① 发生了什么：像知识 diff，而不是两张并列的卡片 */}
+        {/* ① 发生了什么：做成「知识 diff」，而不是两张同级卡片（任务书 PR-07.1 T6）。
+            新知之在上、已有知识在下，中间一行点明关系，视觉权重明显偏向「新」。 */}
         <Section title="发生了什么">
-          <div className="space-y-2">
-            <Card tone="quiet" className="border-l-2 border-l-accent p-3">
+          <div className="overflow-hidden rounded-lg border border-line">
+            <div className="border-l-2 border-l-accent bg-accent/5 px-3 py-2">
               <p className="text-meta uppercase tracking-wider text-accent">新知识</p>
-              <p className="mt-1 text-body leading-relaxed text-ink">{relation.sourceText}</p>
+              <p className="mt-0.5 text-body leading-relaxed text-ink">{relation.sourceText}</p>
               <Link
                 to={`/claims/${relation.sourceClaimId}`}
-                className="mt-1.5 inline-block text-meta text-accent hover:underline"
+                className="mt-1 inline-block text-meta text-accent hover:underline"
               >
                 查看详情
               </Link>
-            </Card>
+            </div>
 
-            <div className="flex justify-center text-meta text-muted">vs</div>
+            <div className="flex items-center gap-2 bg-canvas px-3 py-1.5 text-meta text-muted">
+              <span className="font-medium text-ink/80">{relationshipLabel(relation.relationship)}</span>
+              <span>此关系</span>
+            </div>
 
-            <Card tone="quiet" className="border-l-2 border-l-muted/50 p-3">
+            <div className="border-l-2 border-l-muted/60 bg-elevated/30 px-3 py-2">
               <p className="text-meta uppercase tracking-wider text-muted">已有知识</p>
-              <p className="mt-1 text-body leading-relaxed text-ink/90">{relation.targetText}</p>
+              <p className="mt-0.5 text-body leading-relaxed text-ink/85">{relation.targetText}</p>
               <Link
                 to={`/claims/${relation.targetClaimId}`}
-                className="mt-1.5 inline-block text-meta text-accent hover:underline"
+                className="mt-1 inline-block text-meta text-accent hover:underline"
               >
                 查看详情
               </Link>
-            </Card>
+            </div>
           </div>
         </Section>
 
@@ -154,6 +158,7 @@ export function ReviewDecisionPanel({
               title={option.hint}
               loading={busy}
               disabled={busy}
+              className={option.decision === 'accept' ? 'flex-1' : ''}
               onClick={() => onDecide(option.decision)}
             >
               {option.label}

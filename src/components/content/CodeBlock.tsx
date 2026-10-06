@@ -47,24 +47,25 @@ export function CodeBlock({
       )}
     >
       {!compact ? (
-        <div className="flex items-center justify-between border-b border-line px-3 py-1.5">
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted">
+        <div className="flex items-center justify-between border-b border-line bg-elevated/50 px-3 py-1.5">
+          <span className="rounded bg-canvas px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted">
             {language || 'text'}
           </span>
           <button
             type="button"
             onClick={copy}
             aria-label={copied ? '已复制' : '复制代码'}
+            aria-pressed={copied}
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           >
-            {copied ? <CheckIcon className="h-3 w-3" /> : <CopyIcon className="h-3 w-3" />}
-            {copied ? '已复制' : '复制'}
+            {copied ? <CheckIcon className="h-3 w-3 text-ok" /> : <CopyIcon className="h-3 w-3" />}
+            <span className={copied ? 'text-ok' : ''}>{copied ? '已复制' : '复制'}</span>
           </button>
         </div>
       ) : null}
       <pre
         className={cn(
-          'overflow-x-auto px-3 py-2.5 font-mono text-[12px] leading-relaxed text-ink/90',
+          'overflow-x-auto bg-canvas px-3 py-2.5 font-mono text-[12px] leading-relaxed text-ink/90',
           compact && 'max-h-40',
         )}
       >

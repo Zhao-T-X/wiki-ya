@@ -1,5 +1,4 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/Accordion';
-import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import { searchKindLabel } from '@/lib/status';
 import type { SearchKind } from '@/types/ipc';
@@ -32,16 +31,10 @@ function sameKinds(a: SearchKind[], b: SearchKind[]): boolean {
 export function SearchFilters({
   kinds,
   onKindsChange,
-  semantic,
-  onSemanticChange,
-  aiEnabled,
   resultCount,
 }: {
   kinds: SearchKind[];
   onKindsChange: (kinds: SearchKind[]) => void;
-  semantic: boolean;
-  onSemanticChange: (value: boolean) => void;
-  aiEnabled: boolean;
   resultCount?: number;
 }) {
   const activeScope = SCOPES.find((scope) => sameKinds(scope.kinds, kinds))?.key ?? 'custom';
@@ -105,26 +98,9 @@ export function SearchFilters({
                 })}
               </div>
 
-              <label
-                className={cn(
-                  'flex items-center gap-2 text-meta',
-                  aiEnabled ? 'text-muted' : 'cursor-not-allowed text-muted/50',
-                )}
-                title={aiEnabled ? '启用语义检索' : '语义检索需要 AI Runtime，当前未启用'}
-              >
-                <input
-                  type="checkbox"
-                  checked={semantic}
-                  disabled={!aiEnabled}
-                  onChange={(event) => onSemanticChange(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-accent"
-                />
-                语义检索
-                {!aiEnabled ? <Badge>未启用</Badge> : null}
-                <span className="text-muted/70">
-                  （按语义相近度而非关键词匹配；当前版本尚未接入检索链路）
-                </span>
-              </label>
+              <p className="text-meta leading-relaxed text-muted/70">
+                语义检索：当前版本尚未接入检索链路，接通后会在「高级」中提供开关。
+              </p>
             </div>
           </AccordionContent>
         </AccordionItem>

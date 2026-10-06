@@ -85,7 +85,7 @@ export function SearchResultList({
       {knowledge.length > 0 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-ink">知识</h2>
-          <div className="space-y-2">
+          <div className="divide-y divide-line/70 overflow-hidden rounded-lg border border-line">
             {knowledge.map((hit) => (
               <SearchResultCard key={`${hit.kind}-${hit.id}`} hit={hit} onOpen={onOpen} />
             ))}
@@ -100,7 +100,7 @@ export function SearchResultList({
           <h2 className="text-sm font-semibold text-ink">
             {knowledge.length > 0 ? '来源文档' : '结果'}
           </h2>
-          <div className="space-y-2">
+          <div className="divide-y divide-line/70 overflow-hidden rounded-lg border border-line">
             {sources.map((hit) => (
               <SearchResultCard key={`${hit.kind}-${hit.id}`} hit={hit} onOpen={onOpen} />
             ))}

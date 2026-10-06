@@ -53,7 +53,7 @@ export function ReviewQueue({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 divide-y divide-line overflow-y-auto pr-1">
         {loading && items.length === 0 ? (
           <>
             <SkeletonCard lines={2} />
