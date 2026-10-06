@@ -201,7 +201,10 @@ struct RawClaim {
 /// 兼容两种形态：对象包裹 `{"claims":[...]}`（与 `json_object` 模式最契合）
 /// 与裸数组 `[...]`。同时容忍模型偶尔夹带的 Markdown 围栏或前后解释文字：
 /// 优先在文本中定位首个 `[`/`]` 或 `{`/`}` 包裹的 JSON 片段再解析。
-pub(crate) fn parse_claims(text: &str) -> Result<Vec<RawClaim>, serde_json::Error> {
+///
+/// 仅在本模块内被 `parse_and_validate_claims` 与单元测试使用，故保持私有，
+/// 避免把内部 `RawClaim` 类型暴露到 crate 可见性（修复 `private_interfaces` 警告）。
+fn parse_claims(text: &str) -> Result<Vec<RawClaim>, serde_json::Error> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         // 不应到达这里（provider 已拦截空响应），但防御性处理。
