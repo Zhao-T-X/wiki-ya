@@ -4,6 +4,7 @@ import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 
 import { CodeBlock, InlineCode } from '@/components/content/CodeBlock';
+import { Citation } from '@/components/content/Citation';
 import { cn } from '@/lib/cn';
 
 /**
@@ -341,17 +342,7 @@ function withCitations(
         const matched = /^\[(\d{1,3})\]$/.exec(part);
         if (!matched) return part;
         const index = Number(matched[1]);
-        return (
-          <button
-            key={`${keyHint}-${i}`}
-            type="button"
-            onClick={() => onCitation(index)}
-            title={`跳到来源 [${index}]`}
-            className="mx-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded border border-accent/40 bg-accent/10 px-1 align-baseline font-mono text-[10px] leading-none text-accent transition-colors hover:bg-accent/20"
-          >
-            {index}
-          </button>
-        );
+        return <Citation key={`${keyHint}-${i}`} index={index} onClick={() => onCitation(index)} />;
       });
     }
     if (Array.isArray(node)) {
