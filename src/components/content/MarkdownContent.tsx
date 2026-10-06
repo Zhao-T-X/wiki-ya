@@ -43,8 +43,14 @@ export interface MarkdownContentProps {
   className?: string;
 }
 
-/** compact 模式的字符上限：先截断再渲染，比渲染完再裁剪便宜得多。 */
-const COMPACT_MAX_CHARS = 400;
+/**
+ * compact 模式的字符预算：先做**结构化摘要**再渲染，而不是对原始 Markdown 字符串
+ * 直接 `slice`（任务书 PR-07.1 T2）。直接截断会在代码 fence 中间或表格中间切断，
+ * 渲染出半截 ```` ``` ```` 或残缺表格。这里按「块边界」取舍：fenced code 整段替换
+ * 为占位、其余按段落/列表/表格整块累加，超预算就停在块边界，保证渲染结果始终是
+ * 合法 Markdown，不会出现半个表格或没闭合的 code fence。
+ */
+const COMPACT_MAX_CHARS = 420;
 
 export function MarkdownContent({
   children,
@@ -69,32 +75,101 @@ export function MarkdownContent({
   }
 
   const compact = mode === 'compact';
-  const text =
-    compact && source.length > COMPACT_MAX_CHARS
-      ? `${source.slice(0, COMPACT_MAX_CHARS)}…`
-      : source;
 
-  if (text.trim() === '') {
+  if (compact) {
+    const { text, truncated } = prepareCompact(source, COMPACT_MAX_CHARS);
+    if (text.trim() === '') {
+      return <p className={cn('text-sm text-muted', className)}>（空内容）</p>;
+    }
+    return (
+      <div className={cn('max-h-36 overflow-hidden text-secondary leading-relaxed', className)}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeSanitize]}
+          components={buildComponents(true, onCitation)}
+        >
+          {truncated ? `${text}…` : text}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+
+  if (source.trim() === '') {
     return <p className={cn('text-sm text-muted', className)}>（空内容）</p>;
   }
 
   return (
-    <div
-      className={cn(
-        'text-ink/90',
-        compact ? 'max-h-32 overflow-hidden text-secondary leading-relaxed' : 'text-reading',
-        className,
-      )}
-    >
+    <div className={cn('text-reading', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
-        components={buildComponents(compact, onCitation)}
+        components={buildComponents(false, onCitation)}
       >
-        {text}
+        {source}
       </ReactMarkdown>
     </div>
   );
+}
+
+/**
+ * 把原始 Markdown 压成紧凑摘要（任务书 PR-07.1 T2）。
+ *
+ * 思路：先按空行切成「块」（段落 / 列表 / 表格 / 引用各自成块），fenced code 整段
+ * 替换成一个占位块（compact 不渲染代码）；再从前往后整块累加，超过预算就停在块边界。
+ * 因为表格、列表、引用都是连续非空行构成的整块，所以要么完整保留、要么整块跳过，
+ * 绝不会在表格或代码中间切断。
+ */
+function prepareCompact(src: string, maxChars: number): { text: string; truncated: boolean } {
+  const lines = src.split('\n');
+  const blocks: string[] = [];
+  let cur: string[] = [];
+  let inFence = false;
+
+  const flush = () => {
+    if (cur.length > 0) {
+      blocks.push(cur.join('\n'));
+      cur = [];
+    }
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      flush();
+      if (!inFence) {
+        blocks.push('_代码块已省略_');
+        inFence = true;
+      } else {
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence) continue;
+    if (trimmed === '') {
+      flush();
+      continue;
+    }
+    cur.push(line);
+  }
+  flush();
+
+  let out = '';
+  let used = 0;
+  let truncated = false;
+  for (const block of blocks) {
+    if (out !== '' && used + block.length + 2 > maxChars) {
+      truncated = true;
+      break;
+    }
+    out += (out === '' ? '' : '\n\n') + block;
+    used += block.length + 2;
+  }
+  // 第一个块就超长：仍然至少展示它，避免 compact 渲染成空白。
+  if (out === '' && blocks.length > 0) {
+    out = blocks[0] ?? '';
+    truncated = true;
+  }
+  return { text: out, truncated };
 }
 
 /** 只有 http/https/mailto 可点，其余降级为纯文本。 */
@@ -112,14 +187,23 @@ type MarkdownProps = React.ComponentPropsWithoutRef<'p'>;
 function buildComponents(compact: boolean, onCitation?: (index: number) => void) {
   const H = (level: 1 | 2 | 3 | 4) =>
     // h1~h4 的 props 结构一致，用 h1 作为类型载体（'h' 不是合法标签名）。
+    // 任务书 PR-07.1 T1：full 模式拉满层级节奏（h1 20px → 正文 15px → 元 11px），
+    // compact 模式压低标题，避免「卡片里的 Markdown」喧宾夺主。
     function Heading({ children, ...props }: React.ComponentPropsWithoutRef<'h1'>) {
       const Tag = `h${level}` as 'h1';
-      const size =
-        level <= 2
-          ? 'mt-4 mb-1.5 text-base font-semibold leading-snug'
-          : 'mt-3 mb-1 text-sm font-semibold leading-snug';
+      const size = compact
+        ? level <= 2
+          ? 'mt-3 mb-1 text-sm font-semibold leading-snug text-ink'
+          : 'mt-2 mb-0.5 text-secondary font-semibold leading-snug text-ink/90'
+        : level === 1
+          ? 'mt-7 mb-3 text-xl font-semibold leading-snug text-ink'
+          : level === 2
+            ? 'mt-6 mb-2.5 text-lg font-semibold leading-snug text-ink'
+            : level === 3
+              ? 'mt-5 mb-2 text-base font-semibold leading-snug text-ink'
+              : 'mt-4 mb-1.5 text-sm font-semibold leading-snug text-ink';
       return (
-        <Tag className={cn(size, level > 2 && 'text-ink/90')} {...props}>
+        <Tag className={cn(size)} {...props}>
           {children}
         </Tag>
       );
@@ -131,9 +215,9 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
     h3: H(3),
     h4: H(4),
 
-    // 段落是引用角标的落点：模型按约定用 [n] 标注来源。
+    // 段落是引用角标的落点：模型按约定用 [n] 标注来源。任务书 PR-07.1 T1：放宽段间距。
     p: ({ children, ...props }: MarkdownProps) => (
-      <p className="my-2 break-words whitespace-pre-wrap first:mt-0 last:mb-0" {...props}>
+      <p className="my-2.5 break-words whitespace-pre-wrap first:mt-0 last:mb-0" {...props}>
         {withCitations(children, onCitation)}
       </p>
     ),
@@ -172,13 +256,13 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
     ),
 
     ul: ({ children, ...props }: React.ComponentPropsWithoutRef<'ul'>) => (
-      <ul className="my-2 list-disc space-y-1 pl-5 marker:text-muted" {...props}>
+      <ul className="my-3 list-disc space-y-1.5 pl-5 marker:text-muted" {...props}>
         {children}
       </ul>
     ),
     ol: ({ children, ...props }: React.ComponentPropsWithoutRef<'ol'>) => (
       <ol
-        className="my-2 list-decimal space-y-1 pl-5 marker:font-mono marker:text-meta marker:text-muted"
+        className="my-3 list-decimal space-y-1.5 pl-5 marker:font-mono marker:text-meta marker:text-muted"
         {...props}
       >
         {children}
@@ -186,7 +270,7 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
     ),
 
     blockquote: ({ children, ...props }: React.ComponentPropsWithoutRef<'blockquote'>) => (
-      <blockquote className="my-2 border-l-2 border-accent/40 pl-3 text-muted italic" {...props}>
+      <blockquote className="my-3 border-l-2 border-accent/40 pl-4 text-muted italic" {...props}>
         {children}
       </blockquote>
     ),
@@ -197,7 +281,7 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
     ),
 
     table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
-      <div className="my-3 overflow-x-auto">
+      <div className="my-4 overflow-x-auto">
         <table className="w-full border-collapse text-secondary" {...props}>
           {children}
         </table>
@@ -219,7 +303,7 @@ function buildComponents(compact: boolean, onCitation?: (index: number) => void)
       </td>
     ),
 
-    hr: (props: React.ComponentPropsWithoutRef<'hr'>) => <hr className="my-4 border-line" {...props} />,
+    hr: (props: React.ComponentPropsWithoutRef<'hr'>) => <hr className="my-6 border-line" {...props} />,
 
     code: ({ children, className, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
       const text = String(children ?? '');

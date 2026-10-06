@@ -40,7 +40,6 @@ export function SearchPage() {
   const [mode, setMode] = useState<SearchMode>('search');
   const [query, setQuery] = useState('');
   const [kinds, setKinds] = useState<SearchKind[]>([...DEFAULT_KINDS]);
-  const [semantic, setSemantic] = useState(false);
 
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
@@ -77,7 +76,7 @@ export function SearchPage() {
         await search({
           query: raw,
           limit: DEFAULT_LIMIT,
-          semantic: aiEnabled ? semantic : false,
+          semantic: false,
           kinds,
         }),
       );
@@ -138,9 +137,6 @@ export function SearchPage() {
           <SearchFilters
             kinds={kinds}
             onKindsChange={setKinds}
-            semantic={semantic}
-            onSemanticChange={setSemantic}
-            aiEnabled={aiEnabled}
             resultCount={searched && !searching ? (response?.total ?? 0) : undefined}
           />
         ) : null}

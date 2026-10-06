@@ -1,7 +1,6 @@
 import { MarkdownContent } from '@/components/content/MarkdownContent';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/Accordion';
 import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
 import { formatScore } from '@/lib/format';
 import { hitTarget } from '@/lib/links';
 import { searchKindLabel } from '@/lib/status';
@@ -30,7 +29,7 @@ export function SearchResultCard({
   const knowledge = hit.kind === 'claim' || hit.kind === 'entity';
 
   return (
-    <Card tone="quiet" className="px-4 py-3 transition-colors hover:bg-elevated/70">
+    <div className="px-4 py-3 transition-colors hover:bg-elevated/50">
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
@@ -42,12 +41,12 @@ export function SearchResultCard({
             <Badge tone={knowledge ? 'accent' : 'neutral'} variant="text">
               {searchKindLabel(hit.kind)}
             </Badge>
-            <span className="truncate text-body font-medium leading-snug text-ink">{hit.title}</span>
+            <span className="truncate text-[15px] font-medium leading-snug text-ink">{hit.title}</span>
           </div>
         </button>
       </div>
 
-      {/* 摘要：compact 模式，限高 400 字符，避免一条结果渲染整篇文档。 */}
+      {/* 摘要：compact 模式，块边界结构化摘要，避免一条结果渲染整篇文档。 */}
       <MarkdownContent mode="compact" className="mt-1.5 text-secondary">
         {hit.snippet}
       </MarkdownContent>
@@ -85,7 +84,7 @@ export function SearchResultCard({
           </AccordionContent>
         </AccordionItem>
       </Accordion>
-    </Card>
+    </div>
   );
 }
 
